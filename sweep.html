@@ -1,0 +1,185 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IIS Diagnostic Sweep - MATTS - 10 May 2026 18:07</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0e14;--surface:#0d1117;--card:#161b22;--border:#21262d;
+  --text:#e6edf3;--muted:#7d8590;--mono:'Cascadia Code','Consolas','Courier New',monospace;
+  --critical:#f85149;--warning:#d29922;--ok:#3fb950;--info:#58a6ff;
+}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;line-height:1.6}
+a{color:var(--info);text-decoration:none}
+code,pre,.mono{font-family:var(--mono)}
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:28px 40px;display:flex;align-items:flex-start;justify-content:space-between;gap:24px}
+.header-left h1{font-family:var(--mono);font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.header-left .server{font-size:26px;font-weight:600;color:var(--text);letter-spacing:-.3px}
+.header-left .meta{margin-top:6px;font-size:13px;color:var(--muted)}
+.header-left .meta span{margin-right:20px}
+.status-pill{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.08em;padding:8px 18px;border-radius:4px;white-space:nowrap;align-self:flex-start}
+.status-pill.critical{background:rgba(248,81,73,.15);color:var(--critical);border:1px solid rgba(248,81,73,.35)}
+.status-pill.warning{background:rgba(210,153,34,.15);color:var(--warning);border:1px solid rgba(210,153,34,.35)}
+.status-pill.info{background:rgba(88,166,255,.15);color:var(--info);border:1px solid rgba(88,166,255,.35)}
+.status-pill.healthy,.status-pill.ok{background:rgba(63,185,80,.15);color:var(--ok);border:1px solid rgba(63,185,80,.35)}
+.metrics{display:flex;gap:1px;background:var(--border);border-bottom:1px solid var(--border)}
+.metric{flex:1;background:var(--surface);padding:16px 20px;text-align:center}
+.metric .val{font-family:var(--mono);font-size:22px;font-weight:700;line-height:1.2}
+.metric .val.critical{color:var(--critical)}
+.metric .val.warning{color:var(--warning)}
+.metric .val.ok{color:var(--ok)}
+.metric .lbl{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:2px}
+.main{max-width:1200px;margin:0 auto;padding:32px 40px;display:flex;flex-direction:column;gap:24px}
+.section{background:var(--card);border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.section summary{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;padding:14px 20px;cursor:pointer;display:flex;align-items:center;gap:8px;user-select:none;color:var(--muted)}
+.section summary:hover{background:rgba(255,255,255,.03)}
+.section summary::before{content:'>';font-size:10px;transition:transform .15s}
+.section[open] summary::before{transform:rotate(90deg)}
+.section-title{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;padding:14px 20px;color:var(--muted);border-bottom:1px solid var(--border)}
+.section table{width:100%;border-collapse:collapse}
+.section th{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:10px 16px;border-bottom:1px solid var(--border);text-align:left;font-weight:500;background:var(--surface)}
+.section td{padding:11px 16px;border-bottom:1px solid var(--border);vertical-align:top;font-size:13px}
+.section tr:last-child td{border-bottom:none}
+.section tr:hover td{background:rgba(255,255,255,.015)}
+.badge{display:inline-flex;align-items:center;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.08em;padding:2px 7px;border-radius:3px;white-space:nowrap;text-transform:uppercase}
+.badge.critical{background:rgba(248,81,73,.12);color:var(--critical);border:1px solid rgba(248,81,73,.25)}
+.badge.warning{background:rgba(210,153,34,.12);color:var(--warning);border:1px solid rgba(210,153,34,.25)}
+.badge.ok,.badge.healthy{background:rgba(63,185,80,.12);color:var(--ok);border:1px solid rgba(63,185,80,.25)}
+.badge.info{background:rgba(88,166,255,.12);color:var(--info);border:1px solid rgba(88,166,255,.25)}
+.detail{font-size:12px;color:var(--muted);margin-top:3px}
+.actions{margin:5px 0 0 0;padding:0;list-style:none}
+.actions li{font-size:12px;color:var(--muted);padding:1px 0}
+.actions li::before{content:'> ';color:var(--info)}
+.source{font-family:var(--mono);font-size:11px;background:rgba(255,255,255,.06);padding:2px 6px;border-radius:3px;color:var(--muted)}
+.finding-row td:first-child{width:88px}
+.finding-row td:nth-child(2){width:100px}
+.empty{text-align:center;color:var(--muted);padding:24px;font-style:italic}
+.collection-errors{margin:16px 20px;padding:12px 16px;background:rgba(210,153,34,.08);border:1px solid rgba(210,153,34,.2);border-radius:4px;font-size:12px;color:var(--warning)}
+.collection-errors ul{margin:6px 0 0 16px}
+.footer{text-align:center;padding:32px;font-size:12px;color:var(--muted);border-top:1px solid var(--border)}
+.footer a{color:var(--muted)}
+code{font-family:var(--mono);font-size:12px;background:rgba(255,255,255,.06);padding:1px 5px;border-radius:3px}
+.muted{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <h1>IIS Diagnostic Sweep - IISDiagnostics PowerShell Module</h1>
+    <div class="server">MATTS</div>
+    <div class="meta">
+      <span>10 May 2026 18:07:22</span>
+      <span>Window: 17:07 -&gt; 18:07  (60 min)</span>
+    </div>
+  </div>
+  <div class="status-pill warning">WARNING - 0 critical - 2 warning</div>
+</div>
+
+<div class="metrics">
+  <div class="metric">
+    <div class="val ok">0</div>
+    <div class="lbl">HTTP.sys errors</div>
+  </div>
+  <div class="metric">
+    <div class="val ok">N/A</div>
+    <div class="lbl">W3C requests</div>
+  </div>
+  <div class="metric">
+    <div class="val ok">0</div>
+    <div class="lbl">Stopped pools</div>
+  </div>
+  <div class="metric">
+    <div class="val ok">0</div>
+    <div class="lbl">Missing paths</div>
+  </div>
+  <div class="metric">
+    <div class="val ok">0</div>
+    <div class="lbl">Cert issues</div>
+  </div>
+  <div class="metric">
+    <div class="val ok">N/A</div>
+    <div class="lbl">Sig. events</div>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- Findings -->
+  <div class="section" open>
+    <div class="section-title">Findings</div>
+    <table>
+      <thead><tr><th>Severity</th><th>Source</th><th>Detail</th></tr></thead>
+      <tbody>
+<tr class='finding-row'>
+          <td><span class='badge warning'>Warning</span></td>
+          <td><span class='source'>SiteConfig</span></td>
+          <td><strong>Default Web Site - configuration notice</strong><div class='detail'>Request filtering is blocking the following file extensions: .asax, .ascx, .master, .skin, .browser, .sitemap, .config, .cs, .csproj, .vb, .vbproj, .webinfo, .licx, .resx, .resources, .mdb, .vjsproj, .java, .jsl, .ldb, .dsdgm, .ssdgm, .lsad, .ssmap, .cd, .dsprototype, .lsaprototype, .sdm, .sdmDocument, .mdf, .ldf, .ad, .dd, .ldd, .sd, .adprototype, .lddprototype, .exclude, .refresh, .compiled, .msgx, .vsdisco, .rules. Requests for these extensions will receive a 404.7. Verify these are intentional blocks and not causing application errors.</div><ul class="actions"><li>Run Get-IISSiteConfiguration -SiteName 'Default Web Site' | Format-List</li></ul></td>
+        </tr>
+<tr class='finding-row'>
+          <td><span class='badge warning'>Warning</span></td>
+          <td><span class='source'>SiteConfig</span></td>
+          <td><strong>Default Web Site - configuration notice</strong><div class='detail'>No web.config found in 'C:\inetpub\wwwroot'. This is expected for static file sites but unusual for ASP.NET applications. Verify the application was deployed correctly.</div><ul class="actions"><li>Run Get-IISSiteConfiguration -SiteName 'Default Web Site' | Format-List</li></ul></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- App Pools -->
+  <details class="section" open>
+    <summary>Application pools</summary>
+    <table>
+      <thead><tr><th>Pool name</th><th>State</th><th>Identity</th><th>Flags</th></tr></thead>
+      <tbody><tr><td><code>.NET v4.5</code></td><td><span class='badge ok'>Started</span></td><td>ApplicationPoolIdentity</td><td><span class='badge info'>RapidFail</span></td></tr>
+<tr><td><code>.NET v4.5 Classic</code></td><td><span class='badge ok'>Started</span></td><td>ApplicationPoolIdentity</td><td><span class='badge info'>RapidFail</span></td></tr>
+<tr><td><code>DefaultAppPool</code></td><td><span class='badge ok'>Started</span></td><td>ApplicationPoolIdentity</td><td><span class='badge info'>RapidFail</span></td></tr>
+<tr><td><code>My Broken Appool</code></td><td><span class='badge ok'>Started</span></td><td>ApplicationPoolIdentity</td><td><span class='badge info'>RapidFail</span></td></tr></tbody>
+    </table>
+  </details>
+
+  <!-- W3C Status Codes -->
+  <details class="section">
+    <summary>W3C error status codes</summary>
+    <table>
+      <thead><tr><th>Severity</th><th>Code</th><th>Count</th><th>Description</th></tr></thead>
+      <tbody><tr><td colspan='4' class='empty'>W3C analysis not available or skipped</td></tr></tbody>
+    </table>
+  </details>
+
+  <!-- Site Configuration -->
+  <details class="section">
+    <summary>Site configuration</summary>
+    <table>
+      <thead><tr><th>Site</th><th>Path</th><th>Permissions</th><th>Authentication</th><th>Notices</th></tr></thead>
+      <tbody><tr><td><code>Default Web Site</code></td><td><span class='badge ok'>Exists</span></td><td><span class='badge ok'>ACE OK</span></td><td>Anonymous</td><td><span class='badge warning'>2 notice(s)</span></td></tr></tbody>
+    </table>
+  </details>
+
+  <!-- Certificates -->
+  <details class="section">
+    <summary>SSL certificates</summary>
+    <table>
+      <thead><tr><th>Site</th><th>Status</th><th>Expiry</th><th>Subject</th></tr></thead>
+      <tbody><tr><td colspan='4' class='empty'>No HTTPS bindings found</td></tr></tbody>
+    </table>
+  </details>
+
+  <!-- Event Log -->
+  <details class="section">
+    <summary>Event log (significant events)</summary>
+    <table>
+      <thead><tr><th>Type</th><th>Time</th><th>Source / ID</th><th>Message</th></tr></thead>
+      <tbody><tr><td colspan='4' class='empty'>No significant events in this window</td></tr></tbody>
+    </table>
+  </details>
+</div>
+
+<div class="footer">
+  Generated by <a href="https://github.com">IISDiagnostics</a> PowerShell module
+  &nbsp;|&nbsp; MATTS &nbsp;|&nbsp; 10 May 2026 18:07:22
+</div>
+
+</body>
+</html>

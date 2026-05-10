@@ -7,6 +7,64 @@
   <ViewDefinitions>
 
     <!-- ================================================================
+         IISDiagnostics.SweepResult
+         Compact list view for when the result object is piped or printed.
+         The coloured console output is written during execution.
+         ================================================================ -->
+    <View>
+      <Name>IISDiagnostics.SweepResult</Name>
+      <ViewSelectedBy><TypeName>IISDiagnostics.SweepResult</TypeName></ViewSelectedBy>
+      <ListControl>
+        <ListEntries><ListEntry><ListItems>
+          <ListItem><Label>Computer</Label><PropertyName>ComputerName</PropertyName></ListItem>
+          <ListItem><Label>Generated at</Label><ScriptBlock>$_.GeneratedAt.ToString('dd/MM/yyyy HH:mm:ss')</ScriptBlock></ListItem>
+          <ListItem><Label>Window</Label><ScriptBlock>"$($_.StartTime.ToString('HH:mm')) -> $($_.EndTime.ToString('HH:mm'))"</ScriptBlock></ListItem>
+          <ListItem><Label>Overall severity</Label><PropertyName>OverallSeverity</PropertyName></ListItem>
+          <ListItem><Label>Critical</Label><PropertyName>CriticalCount</PropertyName></ListItem>
+          <ListItem><Label>Warning</Label><PropertyName>WarningCount</PropertyName></ListItem>
+          <ListItem><Label>Info</Label><PropertyName>InfoCount</PropertyName></ListItem>
+          <ListItem>
+            <Label>Findings</Label>
+            <ScriptBlock>
+              ($_.Findings | Sort-Object SeverityRank -Descending |
+                ForEach-Object { "[$($_.Severity)] $($_.Source): $($_.Title)" }) -join [Environment]::NewLine
+            </ScriptBlock>
+          </ListItem>
+          <ListItem>
+            <Label>Collection errors</Label>
+            <ScriptBlock>
+              if ($_.CollectionErrors -and $_.CollectionErrors.Count -gt 0) {
+                  $_.CollectionErrors -join [Environment]::NewLine
+              } else { '-' }
+            </ScriptBlock>
+          </ListItem>
+          <ListItem><Label>Report path</Label><ScriptBlock>if ($_.ReportPath) { $_.ReportPath } else { '-' }</ScriptBlock></ListItem>
+        </ListItems></ListEntry>
+      </ListEntries>
+      </ListControl>
+    </View>
+
+    <!-- ================================================================
+         IISDiagnostics.SweepFinding  - table for $result.Findings
+         ================================================================ -->
+    <View>
+      <Name>IISDiagnostics.SweepFinding</Name>
+      <ViewSelectedBy><TypeName>IISDiagnostics.SweepFinding</TypeName></ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader><Label>Severity</Label><Width>10</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Source</Label><Width>14</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Title</Label><Width>56</Width><Alignment>Left</Alignment></TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries><TableRowEntry><TableColumnItems>
+          <TableColumnItem><PropertyName>Severity</PropertyName></TableColumnItem>
+          <TableColumnItem><PropertyName>Source</PropertyName></TableColumnItem>
+          <TableColumnItem><PropertyName>Title</PropertyName></TableColumnItem>
+        </TableColumnItems></TableRowEntry></TableRowEntries>
+      </TableControl>
+    </View>
+
+    <!-- ================================================================
          IISDiagnostics.StatusHelp  (existing views, unchanged)
          ================================================================ -->
     <View>
@@ -446,7 +504,7 @@
                 <Label>Notices</Label>
                 <ScriptBlock>
                   if ($_.Notices -and $_.Notices.Count -gt 0) {
-                      ($_.Notices | ForEach-Object { "• $_" }) -join [Environment]::NewLine
+                      ($_.Notices | ForEach-Object { "- $_" }) -join [Environment]::NewLine
                   } else { '-' }
                 </ScriptBlock>
               </ListItem>
@@ -856,7 +914,7 @@
                 <Label>Notices</Label>
                 <ScriptBlock>
                   if ($_.Notices -and $_.Notices.Count -gt 0) {
-                      ($_.Notices | ForEach-Object { "• [$($_.Binding)] $($_.Notice)" }) -join [Environment]::NewLine
+                      ($_.Notices | ForEach-Object { "- [$($_.Binding)] $($_.Notice)" }) -join [Environment]::NewLine
                   } else { '-' }
                 </ScriptBlock>
               </ListItem>
@@ -975,7 +1033,7 @@
                 <Label>Notices</Label>
                 <ScriptBlock>
                   if ($_.Notices -and $_.Notices.Count -gt 0) {
-                      ($_.Notices | ForEach-Object { "• $_" }) -join [Environment]::NewLine
+                      ($_.Notices | ForEach-Object { "- $_" }) -join [Environment]::NewLine
                   } else { '-' }
                 </ScriptBlock>
               </ListItem>
@@ -1159,7 +1217,7 @@
                 <Label>Notices</Label>
                 <ScriptBlock>
                   if ($_.Notices -and $_.Notices.Count -gt 0) {
-                      ($_.Notices | ForEach-Object { "• $_" }) -join [Environment]::NewLine
+                      ($_.Notices | ForEach-Object { "- $_" }) -join [Environment]::NewLine
                   } else { '-' }
                 </ScriptBlock>
               </ListItem>

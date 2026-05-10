@@ -6,14 +6,16 @@ $script:StatusData = $null
 
 
 # Dot-source private helpers first so they are available to public cmdlets.
-Get-ChildItem -Path "$PSScriptRoot\Private\*.ps1" -File -ErrorAction Stop |
-    Sort-Object Name |
-    ForEach-Object { . $_.FullName }
+foreach ($privateFile in (Get-ChildItem -Path "$PSScriptRoot\Private\*.ps1" -File -ErrorAction Stop | Sort-Object Name)) {
+    try   { . $privateFile.FullName }
+    catch { Write-Error "Failed to load private helper '$($privateFile.Name)': $_" -ErrorAction Continue }
+}
 
 # Dot-source public cmdlets.
-Get-ChildItem -Path "$PSScriptRoot\Public\*.ps1" -File -ErrorAction Stop |
-    Sort-Object Name |
-    ForEach-Object { . $_.FullName }
+foreach ($publicFile in (Get-ChildItem -Path "$PSScriptRoot\Public\*.ps1" -File -ErrorAction Stop | Sort-Object Name)) {
+    try   { . $publicFile.FullName }
+    catch { Write-Error "Failed to load public function '$($publicFile.Name)': $_" -ErrorAction Continue }
+}
 
 Initialize-StatusData
 
