@@ -17,15 +17,7 @@ Install for current user: copy the IISDiagnostics folder to
 '@
     PowerShellVersion    = '5.1'
     FormatsToProcess     = @('IISDiagnostics.Format.ps1xml')
-    FunctionsToExport    = @('Get-IISStatusCodeHelp', 
-                            'Get-IISHttpErrLog',
-                            'Invoke-IISHttpErrAnalysis',
-                            'Get-IISAppPoolStatus',
-                            'Get-IISSiteBindingReport',
-                            'Get-IISSiteSummary',
-                            'Get-IISW3CLog',
-                            'Invoke-IISW3CLogAnalysis'
-                            )
+    FunctionsToExport    = '*'
     RequiredAssemblies         = @('System.DirectoryServices')
     CmdletsToExport            = @()
     VariablesToExport          = @()

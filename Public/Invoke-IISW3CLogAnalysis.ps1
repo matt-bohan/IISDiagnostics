@@ -240,11 +240,17 @@ function Invoke-IISW3CLogAnalysis {
         } else { '  (no client data)' }
 
         $causesDisplay = if ($likelyCauses) {
-            ($likelyCauses | ForEach-Object -Begin { $n = 1 } -Process { "  $n. $_"; $n++ }) -join [Environment]::NewLine
+            for ($i = 0; $i -lt $likelyCauses.Count; $i++) {
+                "  {0}. {1}" -f ($i + 1), $likelyCauses[$i]
+            }
+            -join [Environment]::NewLine
         } else { '  (none documented)' }
 
         $checksDisplay = if ($checks) {
-            ($checks | ForEach-Object -Begin { $n = 1 } -Process { "  $n. $_"; $n++ }) -join [Environment]::NewLine
+            for ($i = 0; $i -lt $checks.Count; $i++) {
+                "  {0}. {1}" -f ($i + 1), $checks[$i]
+            }
+            -join [Environment]::NewLine
         } else { '  (none documented)' }
 
         $resultGroups.Add([pscustomobject]@{

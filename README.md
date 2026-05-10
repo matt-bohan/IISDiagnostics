@@ -522,6 +522,192 @@ Get-IISSiteBindingReport -SiteName 'MyImportantSite' | Format-List
 ---
 
 
+### `Get-IISSiteConfiguration`
+
+Returns site configuration that cannot be read from logs — physical path, app pool identity
+permissions, authentication methods, and request filtering limits.
+
+This cmdlet answers the class of problems where logs show an error but the cause is
+configuration: a missing physical path producing 404s, an identity with no access to its
+own files producing 500s with Win32 status 5, or request filtering silently rejecting
+requests before they reach the application.
+
+```powershell
+# All sites
+Get-IISSiteConfiguration
+
+# Specific site
+Get-IISSiteConfiguration -SiteName 'My Web Site'
+
+# Sites with a missing or unconfigured physical path
+Get-IISSiteConfiguration | Where-Object PhysicalPathStatus -ne 'Exists'
+
+# Sites where the identity has no confirmed ACE on its physical path
+Get-IISSiteConfiguration |
+    Where-Object { $_.PathPermissions.Status -notin 'OK', 'NotRequired' }
+
+# Sites with any notices
+Get-IISSiteConfiguration | Where-Object { $_.Notices.Count -gt 0 } | Format-List
+
+# Quick summary table
+Get-IISSiteConfiguration |
+    Select-Object SiteName, PhysicalPathStatus,
+        @{ n='Auth';    e={ $_.Authentication.EnabledMethods -join ', ' } },
+        @{ n='Notices'; e={ $_.Notices.Count } }
+
+# Skip the ACL check (useful when the identity or DC is unreachable)
+Get-IISSiteConfiguration -SkipPermissionCheck
+```
+
+**Output:** `IISDiagnostics.SiteConfiguration` per site.
+
+**`PhysicalPathStatus` values:**
+
+| Value | Meaning |
+|---|---|
+| `Exists` | Path is present on disk |
+| `Missing` | Configured path does not exist — requests will fail |
+| `UncPath` | Network path — existence checked but share permissions are not |
+| `NotConfigured` | No physical path set on the site |
+| `AccessDenied` | `Test-Path` was denied — running as non-admin or ACL blocks even reading |
+| `Unknown` | Path could not be determined |
+
+**`PathPermissions.Status` values:**
+
+| Value | Meaning |
+|---|---|
+| `OK` | Explicit Allow ACE found for the identity or `IIS_IUSRS` group |
+| `NoExplicitAce` | No direct ACE found — access may still exist via inheritance or group membership |
+| `ExplicitDeny` | A Deny ACE was found — access blocked regardless of Allow entries |
+| `NotRequired` | `LocalSystem` identity — has unrestricted local access, no check needed |
+| `PathMissing` | Physical path does not exist — check not applicable |
+| `CheckFailed` | ACL could not be read |
+| `Skipped` | `-SkipPermissionCheck` was used, or path is UNC |
+
+**Things worth knowing:**
+
+- The permission check reads **explicit ACEs** from the path ACL only. Access granted via
+  NTFS inheritance or Windows group membership is not resolved. `NoExplicitAce` does not mean
+  the identity has no access — use `icacls` for effective permissions. The notice generated
+  when `NoExplicitAce` is returned includes the exact `icacls` command to run.
+- For `ApplicationPoolIdentity`, two accounts are checked: the virtual account
+  `IIS AppPool\{PoolName}` and the `IIS_IUSRS` local group (which all IIS worker process
+  accounts belong to). An `IIS_IUSRS` ACE is sufficient — IIS grants access this way by
+  default when you use the IIS Manager to set a physical path.
+- `LocalSystem` identity skips the check entirely with `Status = NotRequired` — it has
+  unrestricted local access by definition.
+- Authentication data comes from two separate configuration sections. The IIS auth modules
+  (`Anonymous`, `Windows`, `Basic`, `Digest`) are in `system.webServer/security/authentication`.
+  ASP.NET Forms Authentication is in `system.web/authentication` — a different section that is
+  often overlooked. Both are surfaced on the `Authentication` sub-object.
+- **Windows Authentication provider order matters.** `Negotiate` must be first in the
+  providers list for Kerberos to be attempted. If `NTLM` is listed first, clients fall back
+  to NTLM silently — everything works but Kerberos delegation is unavailable and you won't
+  know why. A notice is raised when the order is wrong.
+- `MaxAllowedContentLength` defaults to 30 MB (31,457,280 bytes). A common misconfiguration
+  is setting this very low during hardening and forgetting it. The cmdlet flags values below
+  1 MB with a notice explaining what status code will be returned and the default value.
+- Scope is the **root application of each site**. Sub-applications within a site (e.g.
+  `/api` running under a different app pool) are not included in this release.
+
+---
+
+
+### `Get-IISEventLog`
+
+Returns IIS-relevant Windows Event Log entries from the System and Application logs,
+covering application pool lifecycle, HTTP.sys, ASP.NET, and application crash sources.
+
+This is the cmdlet that answers *why* — where `Invoke-IISHttpErrAnalysis` tells you a crash
+pattern was detected at 14:22, `Get-IISEventLog` finds the WAS event at 14:22:58 that says
+rapid-fail protection fired.
+
+**Does not require WebAdministration.** Event log access needs elevation only.
+
+```powershell
+# Last hour, all sources
+Get-IISEventLog
+
+# Extended window, errors and warnings only
+Get-IISEventLog -StartTime (Get-Date).AddHours(-4) -EntryType Error, Warning
+
+# Only the events that matter — crash and disable events, application errors
+Get-IISEventLog -Significant
+
+# Pool-specific WAS events
+Get-IISEventLog -AppPoolName 'MyAppPool'
+
+# Timeline for a specific window — good for correlating with HTTPERR findings
+Get-IISEventLog -Significant -StartTime (Get-Date).AddHours(-4) |
+    Sort-Object TimeCreated |
+    Select-Object TimeCreated, Source, EventId, AppPoolName, ShortMessage
+
+# All rapid-fail protection triggers in the past hour
+Get-IISEventLog | Where-Object EventId -eq 5012
+
+# Frequency of WAS event IDs — shows the shape of pool activity
+Get-IISEventLog | Where-Object Source -like '*WAS*' |
+    Group-Object EventId | Sort-Object Count -Descending
+
+# Full message for a specific event
+Get-IISEventLog -Significant | Where-Object EventId -eq 5009 | Format-List
+```
+
+**Output:** `IISDiagnostics.EventLogEntry` — one object per event, sorted by `TimeCreated`.
+
+**Sources queried:**
+
+| Log | Provider | What it records |
+|---|---|---|
+| System | `Microsoft-Windows-WAS` | Pool lifecycle — starts, stops, crashes, rapid-fail. **Most important.** |
+| System | `Microsoft-Windows-HttpService` | HTTP.sys driver events — binding and SSL failures at kernel level |
+| System | `Microsoft-Windows-IIS-W3SVC` | IIS web service events — site start/stop |
+| System | `Microsoft-Windows-IIS-Configuration` | IIS configuration changes |
+| Application | `ASP.NET 4.0.30319.0` | ASP.NET runtime errors and unhandled exceptions |
+| Application | `.NET Runtime` | CLR crashes, OOM, unhandled exceptions |
+| Application | `Application Error` | Windows crash records for `w3wp.exe` — faulting module and exception code |
+| Application | `IIS AspNetCore Module V2` | ANCM startup failures, port conflicts, stdout log errors |
+
+Legacy provider names (`WAS`, `W3SVC`, `ASP.NET 2.0.50727.0`) are also included for
+compatibility with older Server versions.
+
+**Key WAS event IDs:**
+
+| Event ID | Meaning | `IsSignificant` |
+|---|---|---|
+| 5009 | Worker process failed to respond to ping — terminated | ✓ |
+| 5010 | Worker process requested recycle — private bytes limit | ✓ |
+| 5011 | Worker process shutdown callback failed | ✓ |
+| 5012 | Rapid-fail protection triggered — pool disabled | ✓ |
+| 5074 | Pool started successfully | — |
+| 5075 | Pool stopped | — |
+| 5076 | Pool recycled | — |
+| 5077 | Worker process did not shut down in a timely fashion | ✓ |
+| 5080 | Worker process started | — |
+| 5117 | Worker process exited with non-zero exit code | ✓ |
+| 5189 | Pool automatically re-enabled after rapid-fail wait period | ✓ |
+
+**Things worth knowing:**
+
+- `-Significant` returns only WAS crash/disable events (5009, 5011, 5012, 5077, 5117, 5189)
+  and any Error or Critical from the Application log. This is the fast path during an incident
+  — it cuts through recycling noise and Information-level lifecycle events.
+- `KnownDescription` on each entry gives a plain-English summary of well-known WAS event IDs.
+  The table view shows this in preference to the raw (often verbose) event message.
+- `AppPoolName` is extracted from the event message text using a regex pattern. It is
+  populated on most WAS events but not on Application log entries where the pool name isn't
+  mentioned. The full `Message` property is always available via `Format-List`.
+- `-AppPoolName` filtering only excludes entries that *have* an extractable pool name but it
+  doesn't match — Application log entries without a pool name in the message are always
+  included. This means a `.NET Runtime` crash record for `w3wp.exe` is returned even though
+  it doesn't mention the pool by name.
+- Providers that are not installed on the server (e.g. `IIS AspNetCore Module V2` on a
+  server with no ASP.NET Core applications) are silently skipped rather than causing errors.
+- The Security event log is not queried — authentication failure events require separate
+  audit policy configuration and differ from standard administrator access.
+
+---
+
 
 ### `Get-IISSiteSummary`
 

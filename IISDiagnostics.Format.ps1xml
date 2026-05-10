@@ -218,7 +218,7 @@
               <ListItem>
                 <Label>Status code</Label>
                 <ScriptBlock>
-                  if ($_.StatusCode) { $_.StatusCode } else { '— (HTTP.sys dropped before status was set)' }
+                  if ($_.StatusCode) { $_.StatusCode } else { '- (HTTP.sys dropped before status was set)' }
                 </ScriptBlock>
               </ListItem>
               <ListItem>
@@ -232,13 +232,13 @@
               <ListItem>
                 <Label>Client</Label>
                 <ScriptBlock>
-                  '{0}:{1}' -f ($_.ClientIp ?? '-'), ($_.ClientPort ?? '-')
+                  '{0}:{1}' -f (if ($_.ClientIp) { $_.ClientIp } else { '-' }), (if ($_.ClientPort) { $_.ClientPort } else { '-' })
                 </ScriptBlock>
               </ListItem>
               <ListItem>
                 <Label>Server</Label>
                 <ScriptBlock>
-                  '{0}:{1}' -f ($_.ServerIp ?? '-'), ($_.ServerPort ?? '-')
+                  '{0}:{1}' -f (if ($_.ServerIp) { $_.ServerIp } else { '-' }), (if ($_.ServerPort) { $_.ServerPort } else { '-' })
                 </ScriptBlock>
               </ListItem>
               <ListItem>
@@ -327,8 +327,242 @@
     </View>
 
     <!-- ================================================================
+         IISDiagnostics.SiteConfiguration
+         Default table: at-a-glance triage.
+         Detail list: full configuration including sub-objects.
+         ================================================================ -->
+    <View>
+      <Name>IISDiagnostics.SiteConfiguration</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.SiteConfiguration</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader><Label>Site</Label><Width>22</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>State</Label><Width>8</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>PathStatus</Label><Width>12</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Permissions</Label><Width>14</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Auth</Label><Width>28</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Notices</Label><Width>7</Width><Alignment>Right</Alignment></TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem><PropertyName>SiteName</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>SiteState</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>PhysicalPathStatus</PropertyName></TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>
+                  if ($_.PathPermissions) { $_.PathPermissions.Status } else { '-' }
+                </ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>
+                  if ($_.Authentication -and $_.Authentication.EnabledMethods) {
+                      $_.Authentication.EnabledMethods -join ', '
+                  } else { '-' }
+                </ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>if ($_.Notices.Count -gt 0) { $_.Notices.Count } else { '-' }</ScriptBlock>
+              </TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+
+    <View>
+      <Name>IISDiagnostics.SiteConfiguration.Detail</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.SiteConfiguration</TypeName>
+      </ViewSelectedBy>
+      <ListControl>
+        <ListEntries>
+          <ListEntry>
+            <ListItems>
+              <ListItem><Label>Site name</Label><PropertyName>SiteName</PropertyName></ListItem>
+              <ListItem><Label>Site ID</Label><PropertyName>SiteId</PropertyName></ListItem>
+              <ListItem><Label>State</Label><PropertyName>SiteState</PropertyName></ListItem>
+              <ListItem><Label>Application pool</Label><ScriptBlock>if ($_.AppPoolName) { $_.AppPoolName } else { '-' }</ScriptBlock></ListItem>
+              <ListItem><Label>Identity type</Label><PropertyName>IdentityType</PropertyName></ListItem>
+              <ListItem><Label>Identity user</Label><ScriptBlock>if ($_.IdentityUserName) { $_.IdentityUserName } else { '- (built-in)' }</ScriptBlock></ListItem>
+              <ListItem>
+                <Label>Physical path</Label>
+                <ScriptBlock>
+                  $raw = if ($_.PhysicalPathRaw -ne $_.PhysicalPath) { " (raw: $($_.PhysicalPathRaw))" } else { '' }
+                  "$($_.PhysicalPath)$raw"
+                </ScriptBlock>
+              </ListItem>
+              <ListItem><Label>Path status</Label><PropertyName>PhysicalPathStatus</PropertyName></ListItem>
+              <ListItem><Label>web.config present</Label><PropertyName>WebConfigPresent</PropertyName></ListItem>
+              <ListItem>
+                <Label>Path permissions</Label>
+                <ScriptBlock>
+                  $p = $_.PathPermissions
+                  if ($p) {
+                      $lines = @("Status:  $($p.Status)")
+                      if ($p.EffectiveIdentity) { $lines += "Identity: $($p.EffectiveIdentity)" }
+                      if ($p.AccessRights)      { $lines += "Rights:  $($p.AccessRights)" }
+                      if ($p.Detail)            { $lines += "Detail:  $($p.Detail)" }
+                      $lines -join [Environment]::NewLine
+                  } else { '-' }
+                </ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Authentication</Label>
+                <ScriptBlock>
+                  $a = $_.Authentication
+                  if ($a) {
+                      $lines = @("Enabled: $(if ($a.EnabledMethods) { $a.EnabledMethods -join ', ' } else { '(none)' })")
+                      if ($a.AnonymousEnabled) { $lines += "Anonymous user: $(if ($a.AnonymousUser) { $a.AnonymousUser } else { '(built-in)' })" }
+                      if ($a.WindowsAuthEnabled -and $a.WindowsAuthProviders) {
+                          $lines += "Windows Auth providers: $($a.WindowsAuthProviders -join ', ')"
+                      }
+                      if ($a.FormsAuthEnabled) { $lines += "ASP.NET Forms Auth: enabled" }
+                      $lines -join [Environment]::NewLine
+                  } else { '-' }
+                </ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Request filtering</Label>
+                <ScriptBlock>
+                  $r = $_.RequestFiltering
+                  if ($r) {
+                      $lines = @()
+                      if ($null -ne $r.MaxAllowedContentLengthBytes) {
+                          $mb = [math]::Round($r.MaxAllowedContentLengthBytes / 1MB, 0)
+                          $lines += "Max content: $($r.MaxAllowedContentLengthBytes) bytes ($mb MB)"
+                      }
+                      if ($null -ne $r.MaxUrlLength)         { $lines += "Max URL:          $($r.MaxUrlLength) chars" }
+                      if ($null -ne $r.MaxQueryStringLength)  { $lines += "Max query string: $($r.MaxQueryStringLength) chars" }
+                      if ($r.BlockedExtensions.Count -gt 0)  { $lines += "Blocked extensions: $($r.BlockedExtensions -join ', ')" }
+                      if ($r.BlockedVerbs.Count -gt 0)       { $lines += "Blocked verbs: $($r.BlockedVerbs -join ', ')" }
+                      if ($lines) { $lines -join [Environment]::NewLine } else { '(defaults)' }
+                  } else { '-' }
+                </ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Notices</Label>
+                <ScriptBlock>
+                  if ($_.Notices -and $_.Notices.Count -gt 0) {
+                      ($_.Notices | ForEach-Object { "• $_" }) -join [Environment]::NewLine
+                  } else { '-' }
+                </ScriptBlock>
+              </ListItem>
+            </ListItems>
+          </ListEntry>
+        </ListEntries>
+      </ListControl>
+    </View>
+
+    <!-- ================================================================
+         IISDiagnostics.EventLogEntry
+         Default table: timestamp, source, event ID, pool, short message.
+         Detail list: full message and all extracted properties.
+         ================================================================ -->
+    <View>
+      <Name>IISDiagnostics.EventLogEntry</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.EventLogEntry</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader><Label>TimeCreated</Label><Width>21</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Type</Label><Width>5</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Source</Label><Width>18</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>EID</Label><Width>5</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Sig</Label><Width>4</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>AppPool</Label><Width>20</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Message</Label><Width>52</Width><Alignment>Left</Alignment></TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem>
+                <ScriptBlock>$_.TimeCreated.ToString('dd/MM/yyyy HH:mm:ss')</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>
+                  switch ($_.EntryType) {
+                      'Critical'    { 'CRIT' }
+                      'Error'       { 'ERR'  }
+                      'Warning'     { 'WARN' }
+                      'Information' { 'INFO' }
+                      default       { $_.EntryType.Substring(0, [math]::Min(4,$_.EntryType.Length)) }
+                  }
+                </ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>
+                  $s = $_.Source -replace '^Microsoft-Windows-', ''
+                  if ($s.Length -gt 18) { $s.Substring(0,15) + '...' } else { $s }
+                </ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem><PropertyName>EventId</PropertyName></TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>if ($_.IsSignificant) { '!' } else { '-' }</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>
+                  if ($_.AppPoolName) {
+                      if ($_.AppPoolName.Length -gt 20) { $_.AppPoolName.Substring(0,17) + '...' }
+                      else { $_.AppPoolName }
+                  } else { '-' }
+                </ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>
+                  $m = if ($_.KnownDescription) { $_.KnownDescription } else { $_.ShortMessage }
+                  if ($m -and $m.Length -gt 52) { $m.Substring(0,49) + '...' } else { $m }
+                </ScriptBlock>
+              </TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+
+    <View>
+      <Name>IISDiagnostics.EventLogEntry.Detail</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.EventLogEntry</TypeName>
+      </ViewSelectedBy>
+      <ListControl>
+        <ListEntries>
+          <ListEntry>
+            <ListItems>
+              <ListItem><Label>Time created</Label><ScriptBlock>$_.TimeCreated.ToString('dd/MM/yyyy HH:mm:ss')</ScriptBlock></ListItem>
+              <ListItem><Label>Log name</Label><PropertyName>LogName</PropertyName></ListItem>
+              <ListItem><Label>Source</Label><PropertyName>Source</PropertyName></ListItem>
+              <ListItem><Label>Event ID</Label><PropertyName>EventId</PropertyName></ListItem>
+              <ListItem><Label>Entry type</Label><PropertyName>EntryType</PropertyName></ListItem>
+              <ListItem><Label>Significant</Label><PropertyName>IsSignificant</PropertyName></ListItem>
+              <ListItem>
+                <Label>Known description</Label>
+                <ScriptBlock>
+                  if ($_.KnownDescription) { $_.KnownDescription }
+                  else { '- (event ID not in known list; see Message below)' }
+                </ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Application pool</Label>
+                <ScriptBlock>if ($_.AppPoolName) { $_.AppPoolName } else { '- (not extractable from this event)' }</ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Worker process ID</Label>
+                <ScriptBlock>if ($_.WorkerProcessId) { $_.WorkerProcessId } else { '-' }</ScriptBlock>
+              </ListItem>
+              <ListItem><Label>Message</Label><PropertyName>Message</PropertyName></ListItem>
+            </ListItems>
+          </ListEntry>
+        </ListEntries>
+      </ListControl>
+    </View>
+
+    <!-- ================================================================
          IISDiagnostics.W3CStatusGroup
-         Default table: one row per status combination — the at-a-glance view.
+         Default table: one row per status combination - the at-a-glance view.
          Detail list: full enrichment including causes, checks, top URIs.
          ================================================================ -->
     <View>
@@ -384,14 +618,14 @@
                   if ($_.IsKnown) {
                       "Yes ($($_.LookupSource))"
                   } else {
-                      "No — run: Get-IISStatusHelp '$($_.StatusKey)' for further guidance"
+                      "No - run: Get-IISStatusHelp '$($_.StatusKey)' for further guidance"
                   }
                 </ScriptBlock>
               </ListItem>
               <ListItem><Label>Title</Label><ScriptBlock>if ($_.Title) { $_.Title } else { '(not documented)' }</ScriptBlock></ListItem>
-              <ListItem><Label>Description</Label><ScriptBlock>if ($_.Description) { $_.Description } else { '—' }</ScriptBlock></ListItem>
-              <ListItem><Label>Server admin concern</Label><ScriptBlock>if ($_.ServerAdminConcern) { $_.ServerAdminConcern } else { '—' }</ScriptBlock></ListItem>
-              <ListItem><Label>App support concern</Label><ScriptBlock>if ($_.ApplicationSupportConcern) { $_.ApplicationSupportConcern } else { '—' }</ScriptBlock></ListItem>
+              <ListItem><Label>Description</Label><ScriptBlock>if ($_.Description) { $_.Description } else { '-' }</ScriptBlock></ListItem>
+              <ListItem><Label>Server admin concern</Label><ScriptBlock>if ($_.ServerAdminConcern) { $_.ServerAdminConcern } else { '-' }</ScriptBlock></ListItem>
+              <ListItem><Label>App support concern</Label><ScriptBlock>if ($_.ApplicationSupportConcern) { $_.ApplicationSupportConcern } else { '-' }</ScriptBlock></ListItem>
               <ListItem><Label>Likely causes</Label><PropertyName>LikelyCausesDisplay</PropertyName></ListItem>
               <ListItem><Label>Things to check</Label><PropertyName>ChecksDisplay</PropertyName></ListItem>
               <ListItem><Label>Top URIs</Label><PropertyName>TopUrisDisplay</PropertyName></ListItem>
@@ -424,7 +658,7 @@
               <ListItem><Label>Server error groups (5xx)</Label><ScriptBlock>$_.ServerErrors.Count</ScriptBlock></ListItem>
               <ListItem><Label>Undocumented groups</Label><ScriptBlock>
                 if ($_.UnknownGroups.Count -gt 0) {
-                    "$($_.UnknownGroups.Count) — run Get-IISStatusHelp for each, or check the StatusCodes.json data file"
+                    "$($_.UnknownGroups.Count) - run Get-IISStatusHelp for each, or check the StatusCodes.json data file"
                 } else { '0' }
               </ScriptBlock></ListItem>
               <ListItem>
@@ -490,7 +724,7 @@
             <ListItems>
               <ListItem><Label>Timestamp (local)</Label><ScriptBlock>if ($_.Timestamp) { $_.Timestamp.ToString('dd/MM/yyyy HH:mm:ss') } else { '-' }</ScriptBlock></ListItem>
               <ListItem><Label>Site log folder</Label><ScriptBlock>if ($_.SiteLogFolder) { $_.SiteLogFolder } else { '-' }</ScriptBlock></ListItem>
-              <ListItem><Label>Site name (s-sitename)</Label><ScriptBlock>if ($_.SiteName) { $_.SiteName } else { '— (s-sitename not logged)' }</ScriptBlock></ListItem>
+              <ListItem><Label>Site name (s-sitename)</Label><ScriptBlock>if ($_.SiteName) { $_.SiteName } else { '- (s-sitename not logged)' }</ScriptBlock></ListItem>
               <ListItem><Label>Method</Label><ScriptBlock>if ($_.Method) { $_.Method } else { '-' }</ScriptBlock></ListItem>
               <ListItem><Label>URI stem</Label><ScriptBlock>if ($_.UriStem) { $_.UriStem } else { '-' }</ScriptBlock></ListItem>
               <ListItem><Label>URI query</Label><ScriptBlock>if ($_.UriQuery) { $_.UriQuery } else { '-' }</ScriptBlock></ListItem>
@@ -501,8 +735,8 @@
                 <Label>Win32 status</Label>
                 <ScriptBlock>
                   if ($null -ne $_.Win32Status) {
-                      if ($_.Win32Status -eq 64) { "64 — ERROR_NETNAME_DELETED (connection reset)" }
-                      elseif ($_.Win32Status -eq 0) { "0 — Success" }
+                      if ($_.Win32Status -eq 64) { "64 - ERROR_NETNAME_DELETED (connection reset)" }
+                      elseif ($_.Win32Status -eq 0) { "0 - Success" }
                       else { $_.Win32Status }
                   } else { '-' }
                 </ScriptBlock>
@@ -555,7 +789,7 @@
 
     <!-- ================================================================
          IISDiagnostics.SiteSummary
-         Default table: one row per site — the at-a-glance overview.
+         Default table: one row per site - the at-a-glance overview.
          Detail list: expands notices with binding addresses.
          ================================================================ -->
     <View>
@@ -605,7 +839,7 @@
               <ListItem><Label>Site name</Label><PropertyName>SiteName</PropertyName></ListItem>
               <ListItem><Label>Site ID</Label><PropertyName>SiteId</PropertyName></ListItem>
               <ListItem><Label>State</Label><PropertyName>SiteState</PropertyName></ListItem>
-              <ListItem><Label>Application pool</Label><ScriptBlock>if ($_.ApplicationPool) { $_.ApplicationPool } else { '—' }</ScriptBlock></ListItem>
+              <ListItem><Label>Application pool</Label><ScriptBlock>if ($_.ApplicationPool) { $_.ApplicationPool } else { '-' }</ScriptBlock></ListItem>
               <ListItem><Label>HTTP bindings</Label><PropertyName>HttpBindings</PropertyName></ListItem>
               <ListItem><Label>HTTPS bindings</Label><PropertyName>HttpsBindings</PropertyName></ListItem>
               <ListItem><Label>Other bindings</Label><PropertyName>OtherBindings</PropertyName></ListItem>
@@ -614,8 +848,8 @@
                 <Label>Nearest expiry</Label>
                 <ScriptBlock>
                   if ($_.NearestExpiry) {
-                      "$($_.NearestExpiry.ToString('dd/MM/yyyy')) ($($_.NearestExpiryDays) days) — $($_.NearestCertSubject)"
-                  } else { '— (no HTTPS bindings with certificates)' }
+                      "$($_.NearestExpiry.ToString('dd/MM/yyyy')) ($($_.NearestExpiryDays) days) - $($_.NearestCertSubject)"
+                  } else { '- (no HTTPS bindings with certificates)' }
                 </ScriptBlock>
               </ListItem>
               <ListItem>
@@ -623,7 +857,7 @@
                 <ScriptBlock>
                   if ($_.Notices -and $_.Notices.Count -gt 0) {
                       ($_.Notices | ForEach-Object { "• [$($_.Binding)] $($_.Notice)" }) -join [Environment]::NewLine
-                  } else { '—' }
+                  } else { '-' }
                 </ScriptBlock>
               </ListItem>
             </ListItems>
@@ -634,7 +868,7 @@
 
     <!-- ================================================================
          IISDiagnostics.SiteBinding
-         Default table: triage view — site, binding address, status, expiry.
+         Default table: triage view - site, binding address, status, expiry.
          Detail list: everything including SANs and notices.
          ================================================================ -->
     <View>
@@ -699,7 +933,7 @@
               </ListItem>
               <ListItem>
                 <Label>Hostname</Label>
-                <ScriptBlock>if ($_.HostName) { $_.HostName } else { '— (not set)' }</ScriptBlock>
+                <ScriptBlock>if ($_.HostName) { $_.HostName } else { '- (not set)' }</ScriptBlock>
               </ListItem>
               <ListItem><Label>SNI enabled</Label><PropertyName>IsSni</PropertyName></ListItem>
               <ListItem><Label>Central cert store</Label><PropertyName>IsCentralCertStore</PropertyName></ListItem>
@@ -709,22 +943,22 @@
               </ListItem>
               <ListItem>
                 <Label>Cert thumbprint</Label>
-                <ScriptBlock>if ($_.CertThumbprint) { $_.CertThumbprint } else { '— (none)' }</ScriptBlock>
+                <ScriptBlock>if ($_.CertThumbprint) { $_.CertThumbprint } else { '- (none)' }</ScriptBlock>
               </ListItem>
               <ListItem>
                 <Label>Cert subject</Label>
-                <ScriptBlock>if ($_.CertSubject) { $_.CertSubject } else { '—' }</ScriptBlock>
+                <ScriptBlock>if ($_.CertSubject) { $_.CertSubject } else { '-' }</ScriptBlock>
               </ListItem>
               <ListItem>
                 <Label>Cert issuer</Label>
-                <ScriptBlock>if ($_.CertIssuer) { $_.CertIssuer } else { '—' }</ScriptBlock>
+                <ScriptBlock>if ($_.CertIssuer) { $_.CertIssuer } else { '-' }</ScriptBlock>
               </ListItem>
               <ListItem>
                 <Label>Cert expiry</Label>
                 <ScriptBlock>
                   if ($_.CertExpiry) {
                       "$($_.CertExpiry.ToString('dd/MM/yyyy HH:mm')) ($($_.DaysUntilExpiry) days)"
-                  } else { '—' }
+                  } else { '-' }
                 </ScriptBlock>
               </ListItem>
               <ListItem><Label>Expiry status</Label><PropertyName>ExpiryStatus</PropertyName></ListItem>
@@ -734,7 +968,7 @@
                 <ScriptBlock>
                   if ($_.SubjectAltNames -and $_.SubjectAltNames.Count -gt 0) {
                       $_.SubjectAltNames -join ', '
-                  } else { '— (none or not extracted)' }
+                  } else { '- (none or not extracted)' }
                 </ScriptBlock>
               </ListItem>
               <ListItem>
@@ -742,7 +976,7 @@
                 <ScriptBlock>
                   if ($_.Notices -and $_.Notices.Count -gt 0) {
                       ($_.Notices | ForEach-Object { "• $_" }) -join [Environment]::NewLine
-                  } else { '—' }
+                  } else { '-' }
                 </ScriptBlock>
               </ListItem>
             </ListItems>
@@ -884,7 +1118,7 @@
               </ListItem>
               <ListItem>
                 <Label>Username</Label>
-                <ScriptBlock>if ($_.UserName) { $_.UserName } else { '— (built-in identity)' }</ScriptBlock>
+                <ScriptBlock>if ($_.UserName) { $_.UserName } else { '- (built-in identity)' }</ScriptBlock>
               </ListItem>
               <ListItem>
                 <Label>Account status</Label>
@@ -898,7 +1132,7 @@
                 <Label>Rapid-fail protection</Label>
                 <ScriptBlock>
                   if ($_.RapidFailProtectionEnabled) {
-                      "Enabled — max $($_.RapidFailProtectionMaxCrashes) crashes per $($_.RapidFailProtectionInterval)"
+                      "Enabled - max $($_.RapidFailProtectionMaxCrashes) crashes per $($_.RapidFailProtectionInterval)"
                   } else { 'Disabled' }
                 </ScriptBlock>
               </ListItem>
@@ -926,7 +1160,7 @@
                 <ScriptBlock>
                   if ($_.Notices -and $_.Notices.Count -gt 0) {
                       ($_.Notices | ForEach-Object { "• $_" }) -join [Environment]::NewLine
-                  } else { '—' }
+                  } else { '-' }
                 </ScriptBlock>
               </ListItem>
             </ListItems>

@@ -17,16 +17,9 @@ Get-ChildItem -Path "$PSScriptRoot\Public\*.ps1" -File -ErrorAction Stop |
 
 Initialize-StatusData
 
-$publicFunctions = @(
-    'Get-IISStatusCodeHelp',
-    'Get-IISHttpErrLog',
-    'Invoke-IISHttpErrAnalysis',
-    'Get-IISAppPoolStatus',
-    'Get-IISSiteBindingReport',
-    'Get-IISSiteSummary',
-    'Get-IISW3CLog',
-    'Invoke-IISW3CLogAnalysis'
-)
+$publicFunctions = @(Get-ChildItem -Path "$PSScriptRoot\Public\*.ps1" -File -ErrorAction Stop |
+    Sort-Object Name |
+    ForEach-Object { $_.BaseName })
 
 Export-ModuleMember -Function $publicFunctions
  

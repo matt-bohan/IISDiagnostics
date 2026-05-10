@@ -41,16 +41,16 @@ function Test-DomainAccountStatus {
         [string]$Username
     )
 
-    function Make-Result([string]$Status, [string]$Detail, [string]$Method = 'None',
+    function New-Result([string]$Status, [string]$Detail, [string]$Method = 'None',
                          $IsLockedOut = $null, $IsDisabled = $null,
-                         $PasswordExpired = $null, [string]$Sam = '') {
+                         $ExpiryFlag = $null, [string]$Sam = '') {
         [pscustomobject]@{
             Status          = $Status
             Detail          = $Detail
             Method          = $Method
             IsLockedOut     = $IsLockedOut
             IsDisabled      = $IsDisabled
-            PasswordExpired = $PasswordExpired
+            PasswordExpired = $ExpiryFlag
             SamAccountName  = $Sam
         }
     }
@@ -68,7 +68,7 @@ function Test-DomainAccountStatus {
 
         # Local account - MACHINENAME\username
         if ($domain -eq $env:COMPUTERNAME) {
-            return Make-Result -Status 'LocalAccount' `
+            return New-Result -Status 'LocalAccount' `
                                -Detail "Local machine account '$Username' - Active Directory check not applicable." `
                                -Sam $samAccount
         }
@@ -84,7 +84,7 @@ function Test-DomainAccountStatus {
     }
 
     if ([string]::IsNullOrWhiteSpace($samAccount)) {
-        return Make-Result -Status 'CheckFailed' `
+        return New-Result -Status 'CheckFailed' `
                            -Detail "Could not parse a username from '$Username'."
     }
 
@@ -115,14 +115,14 @@ function Test-DomainAccountStatus {
                 $detail += " Password last set $age day(s) ago."
             }
 
-            return Make-Result -Status $status -Detail $detail -Method 'ADModule' `
+            return New-Result -Status $status -Detail $detail -Method 'ADModule' `
                                -IsLockedOut $adUser.LockedOut `
                                -IsDisabled (-not $adUser.Enabled) `
-                               -PasswordExpired $adUser.PasswordExpired `
+                               -ExpiryFlag $adUser.PasswordExpired `
                                -Sam $samAccount
         }
         catch [Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException] {
-            return Make-Result -Status 'CheckFailed' `
+            return New-Result -Status 'CheckFailed' `
                                -Detail "Account '$samAccount' was not found in Active Directory." `
                                -Method 'ADModule' -Sam $samAccount
         }
@@ -149,7 +149,7 @@ function Test-DomainAccountStatus {
         $searcher.Dispose()
 
         if ($null -eq $result) {
-            return Make-Result -Status 'CheckFailed' `
+            return New-Result -Status 'CheckFailed' `
                                -Detail "Account '$samAccount' was not found via directory search. Verify the account exists and this server can reach a domain controller." `
                                -Method 'ADSI' -Sam $samAccount
         }
@@ -172,12 +172,12 @@ function Test-DomainAccountStatus {
             }
         }
 
-        return Make-Result -Status $status -Detail $detail -Method 'ADSI' `
+        return New-Result -Status $status -Detail $detail -Method 'ADSI' `
                            -IsLockedOut $isLockedOut -IsDisabled $isDisabled `
-                           -PasswordExpired $null -Sam $samAccount
+                           -ExpiryFlag $null -Sam $samAccount
     }
     catch {
-        return Make-Result -Status 'CheckFailed' `
+        return New-Result -Status 'CheckFailed' `
                            -Detail "ADSI directory search failed: $_. The server may not be able to reach a domain controller, or the account may be in a domain without a trust from this machine." `
                            -Method 'ADSI' -Sam $samAccount
     }
