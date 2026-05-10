@@ -2,8 +2,8 @@
     RootModule           = 'IISDiagnostics.psm1'
     ModuleVersion        = '1.0.0'
     GUID                 = 'eb7bbab6-b3a4-4d32-8f1a-1f01a72a4205'
-    Author               = 'IIS Diagnostics'
-    CompanyName          = 'Matt Bohan'
+    Author               = 'Matthew Bohan'
+    CompanyName          = 'Matthew Bohan'
     Copyright            = '(c) Matt Bohan 2026'
     Description          = @'
 Explains HTTP and IIS substatus codes with admin vs application guidance and checks.
@@ -20,11 +20,15 @@ Install for current user: copy the IISDiagnostics folder to
     FunctionsToExport    = @('Get-IISStatusCodeHelp', 
                             'Get-IISHttpErrLog',
                             'Invoke-IISHttpErrAnalysis',
-                            'Get-IISAppPoolStatus')
-    CmdletsToExport      = @()
-    VariablesToExport    = @()
-    AliasesToExport      = @()
-    PrivateData          = @{
+                            'Get-IISAppPoolStatus',
+                            'Get-IISSiteBindingReport',
+                            'Get-IISSiteSummary'
+                            )
+    RequiredAssemblies         = @('System.DirectoryServices')
+    CmdletsToExport            = @()
+    VariablesToExport          = @()
+    AliasesToExport            = @()
+    PrivateData                = @{
         PSData = @{
             Tags       = @('IIS', 'Diagnostics', 'HTTP', 'Troubleshooting', 'Logs', 'MIT')
             LicenseUri = 'https://opensource.org/licenses/MIT'

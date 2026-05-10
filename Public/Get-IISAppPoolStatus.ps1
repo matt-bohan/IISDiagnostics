@@ -68,7 +68,7 @@ function Get-IISAppPoolStatus {
     .EXAMPLE
         Get-IISAppPool -Name *MyAppPool*
 
-        Returns all pools whose name contains CyberArk.
+        Returns all pools whose name contains MyAppPool.
 
     .EXAMPLE
         Get-IISAppPool | Where-Object State -ne 'Started'

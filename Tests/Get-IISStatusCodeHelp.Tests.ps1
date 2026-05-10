@@ -12,28 +12,30 @@ Describe 'Get-IISStatusCodeHelp' {
     It 'returns details for a known HTTP status code' {
         $result = Get-IISStatusCodeHelp 503
 
-        $result.PSObject.TypeNames[0] | Should Be 'IISDiagnostics.StatusHelp'
-        $result.StatusCode | Should Be '503'
-        $result.Title | Should Be 'Service Unavailable'
-        $result.LikelyCauses.Count | Should BeGreaterThan 0
+        if ($result.PSObject.TypeNames[0] -ne 'IISDiagnostics.StatusHelp') { throw 'Expected IISDiagnostics.StatusHelp result type.' }
+        if ($result.StatusCode -ne '503') { throw "Expected StatusCode 503, got '$($result.StatusCode)'." }
+        if ($result.Title -ne 'Service Unavailable') { throw "Unexpected title '$($result.Title)'." }
+        if ($result.LikelyCauses.Count -le 0) { throw 'Expected one or more likely causes.' }
     }
 
     It 'returns details for a known IIS substatus code' {
         $result = Get-IISStatusCodeHelp '500.30'
 
-        $result.PSObject.TypeNames[0] | Should Be 'IISDiagnostics.StatusHelp'
-        $result.StatusCode | Should Be '500.30'
-        $result.Title | Should Be '500.30 - In-process start failure'
+        if ($result.PSObject.TypeNames[0] -ne 'IISDiagnostics.StatusHelp') { throw 'Expected IISDiagnostics.StatusHelp result type.' }
+        if ($result.StatusCode -ne '500.30') { throw "Expected StatusCode 500.30, got '$($result.StatusCode)'." }
+        if ($result.Title -ne '500.30 - In-process start failure') { throw "Unexpected title '$($result.Title)'." }
     }
 
     It 'returns unknown guidance for unmapped substatus values' {
         $result = Get-IISStatusCodeHelp '500.999'
 
-        $result.StatusCode | Should Be '500.999'
-        $result.Title | Should Be 'Unknown or undocumented status'
+        if ($result.StatusCode -ne '500.999') { throw "Expected StatusCode 500.999, got '$($result.StatusCode)'." }
+        if ($result.Title -ne 'Unknown or undocumented status') { throw "Unexpected title '$($result.Title)'." }
     }
 
     It 'throws for dotted numeric values not passed as strings' {
-        { Get-IISStatusCodeHelp 500.30 } | Should Throw
+        $threw = $false
+        try { Get-IISStatusCodeHelp 500.30 | Out-Null } catch { $threw = $true }
+        if (-not $threw) { throw 'Expected Get-IISStatusCodeHelp 500.30 to throw.' }
     }
 }

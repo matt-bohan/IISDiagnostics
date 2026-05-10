@@ -16,11 +16,11 @@ Describe 'Invoke-IISHttpErrAnalysis' {
 
             $result = Invoke-IISHttpErrAnalysis
 
-            $result.PSObject.TypeNames[0] | Should Be 'IISDiagnostics.HttpErrAnalysis'
-            $result.OverallSeverity | Should Be 'Healthy'
-            $result.TotalEntries | Should Be 0
-            ($result.Findings.Count -ge 1) | Should Be $true
-            @($result.Findings | Where-Object Category -eq 'NoData').Count | Should BeGreaterThan 0
+            if ($result.PSObject.TypeNames[0] -ne 'IISDiagnostics.HttpErrAnalysis') { throw 'Expected IISDiagnostics.HttpErrAnalysis result type.' }
+            if ($result.OverallSeverity -ne 'Healthy') { throw "Expected Healthy severity, got '$($result.OverallSeverity)'." }
+            if ($result.TotalEntries -ne 0) { throw "Expected TotalEntries 0, got '$($result.TotalEntries)'." }
+            if ($result.Findings.Count -lt 1) { throw 'Expected one or more findings.' }
+            if (@($result.Findings | Where-Object Category -eq 'NoData').Count -le 0) { throw 'Expected NoData finding.' }
         }
     }
 
@@ -69,8 +69,8 @@ Describe 'Invoke-IISHttpErrAnalysis' {
 
             $result = Invoke-IISHttpErrAnalysis
 
-            $result.OverallSeverity | Should Be 'Critical'
-            @($result.Findings | Where-Object Category -eq 'QueueDrainStopped').Count | Should BeGreaterThan 0
+            if ($result.OverallSeverity -ne 'Critical') { throw "Expected Critical severity, got '$($result.OverallSeverity)'." }
+            if (@($result.Findings | Where-Object Category -eq 'QueueDrainStopped').Count -le 0) { throw 'Expected QueueDrainStopped finding.' }
         }
     }
 }

@@ -376,7 +376,7 @@ function Invoke-IISHttpErrAnalysis {
             ) `
             -Evidence "$sslCount SslError entries." `
             -RecommendedActions @(
-                'Run Get-IISSiteBinding to check certificate expiry and binding configuration'
+                    'Run Get-IISSiteBindingReport to check certificate expiry and binding configuration'
                 'Run: netsh http show sslcert - confirm the certificate is still bound to the port'
                 'Check whether clients are negotiating TLS versions or cipher suites that have been disabled'
             )

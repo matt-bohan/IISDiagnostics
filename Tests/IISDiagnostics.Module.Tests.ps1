@@ -11,13 +11,15 @@ Describe 'IISDiagnostics module basics' {
 
     It 'imports successfully' {
         $module = Get-Module IISDiagnostics
-        $module | Should Not BeNullOrEmpty
+        if ($null -eq $module) { throw 'Expected module IISDiagnostics to be imported.' }
     }
 
     It 'exports expected public commands' {
         $module = Get-Module IISDiagnostics
-        ($module.ExportedCommands.Keys -contains 'Get-IISStatusCodeHelp') | Should Be $true
-        ($module.ExportedCommands.Keys -contains 'Get-IISHttpErrLog') | Should Be $true
-        ($module.ExportedCommands.Keys -contains 'Invoke-IISHttpErrAnalysis') | Should Be $true
+        if (-not ($module.ExportedCommands.Keys -contains 'Get-IISStatusCodeHelp')) { throw 'Expected Get-IISStatusCodeHelp export.' }
+        if (-not ($module.ExportedCommands.Keys -contains 'Get-IISHttpErrLog')) { throw 'Expected Get-IISHttpErrLog export.' }
+        if (-not ($module.ExportedCommands.Keys -contains 'Invoke-IISHttpErrAnalysis')) { throw 'Expected Invoke-IISHttpErrAnalysis export.' }
+        if (-not ($module.ExportedCommands.Keys -contains 'Get-IISSiteBindingReport')) { throw 'Expected Get-IISSiteBindingReport export.' }
+        if (-not ($module.ExportedCommands.Keys -contains 'Get-IISSiteSummary')) { throw 'Expected Get-IISSiteSummary export.' }
     }
 }

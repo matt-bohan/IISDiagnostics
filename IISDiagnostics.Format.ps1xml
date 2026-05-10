@@ -327,6 +327,204 @@
     </View>
 
     <!-- ================================================================
+         IISDiagnostics.SiteSummary
+         Default table: one row per site — the at-a-glance overview.
+         Detail list: expands notices with binding addresses.
+         ================================================================ -->
+    <View>
+      <Name>IISDiagnostics.SiteSummary</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.SiteSummary</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader><Label>Site</Label><Width>26</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>State</Label><Width>10</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>AppPool</Label><Width>22</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>HTTP</Label><Width>5</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>HTTPS</Label><Width>6</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>CertStatus</Label><Width>14</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>DaysLeft</Label><Width>9</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Expiry</Label><Width>12</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Notices</Label><Width>7</Width><Alignment>Right</Alignment></TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem><PropertyName>SiteName</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>SiteState</PropertyName></TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($_.ApplicationPool) { $_.ApplicationPool } else { '-' }</ScriptBlock></TableColumnItem>
+              <TableColumnItem><PropertyName>HttpBindings</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>HttpsBindings</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>WorstCertStatus</PropertyName></TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($null -ne $_.NearestExpiryDays) { $_.NearestExpiryDays } else { '-' }</ScriptBlock></TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($_.NearestExpiry) { $_.NearestExpiry.ToString('dd/MM/yyyy') } else { '-' }</ScriptBlock></TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($_.NoticeCount -gt 0) { $_.NoticeCount } else { '-' }</ScriptBlock></TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+
+    <View>
+      <Name>IISDiagnostics.SiteSummary.Detail</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.SiteSummary</TypeName>
+      </ViewSelectedBy>
+      <ListControl>
+        <ListEntries>
+          <ListEntry>
+            <ListItems>
+              <ListItem><Label>Site name</Label><PropertyName>SiteName</PropertyName></ListItem>
+              <ListItem><Label>Site ID</Label><PropertyName>SiteId</PropertyName></ListItem>
+              <ListItem><Label>State</Label><PropertyName>SiteState</PropertyName></ListItem>
+              <ListItem><Label>Application pool</Label><ScriptBlock>if ($_.ApplicationPool) { $_.ApplicationPool } else { '—' }</ScriptBlock></ListItem>
+              <ListItem><Label>HTTP bindings</Label><PropertyName>HttpBindings</PropertyName></ListItem>
+              <ListItem><Label>HTTPS bindings</Label><PropertyName>HttpsBindings</PropertyName></ListItem>
+              <ListItem><Label>Other bindings</Label><PropertyName>OtherBindings</PropertyName></ListItem>
+              <ListItem><Label>Worst cert status</Label><PropertyName>WorstCertStatus</PropertyName></ListItem>
+              <ListItem>
+                <Label>Nearest expiry</Label>
+                <ScriptBlock>
+                  if ($_.NearestExpiry) {
+                      "$($_.NearestExpiry.ToString('dd/MM/yyyy')) ($($_.NearestExpiryDays) days) — $($_.NearestCertSubject)"
+                  } else { '— (no HTTPS bindings with certificates)' }
+                </ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Notices</Label>
+                <ScriptBlock>
+                  if ($_.Notices -and $_.Notices.Count -gt 0) {
+                      ($_.Notices | ForEach-Object { "• [$($_.Binding)] $($_.Notice)" }) -join [Environment]::NewLine
+                  } else { '—' }
+                </ScriptBlock>
+              </ListItem>
+            </ListItems>
+          </ListEntry>
+        </ListEntries>
+      </ListControl>
+    </View>
+
+    <!-- ================================================================
+         IISDiagnostics.SiteBinding
+         Default table: triage view — site, binding address, status, expiry.
+         Detail list: everything including SANs and notices.
+         ================================================================ -->
+    <View>
+      <Name>IISDiagnostics.SiteBinding</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.SiteBinding</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader><Label>Site</Label><Width>22</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Proto</Label><Width>6</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Address</Label><Width>34</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>SNI</Label><Width>4</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>ExpiryStatus</Label><Width>14</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>DaysLeft</Label><Width>9</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Expiry</Label><Width>12</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Wildcard</Label><Width>8</Width><Alignment>Left</Alignment></TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem><PropertyName>SiteName</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>Protocol</PropertyName></TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>
+                  $ip = if ($_.IPAddress) { $_.IPAddress } else { '*' }
+                  $h  = if ($_.HostName)  { ":$($_.HostName)" } else { '' }
+                  "$ip`:$($_.Port)$h"
+                </ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($_.IsSni) { 'Yes' } else { '-' }</ScriptBlock></TableColumnItem>
+              <TableColumnItem><PropertyName>ExpiryStatus</PropertyName></TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($null -ne $_.DaysUntilExpiry) { $_.DaysUntilExpiry } else { '-' }</ScriptBlock></TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($_.CertExpiry) { $_.CertExpiry.ToString('dd/MM/yyyy') } else { '-' }</ScriptBlock></TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($_.IsWildcard) { 'Yes' } else { '-' }</ScriptBlock></TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+
+    <View>
+      <Name>IISDiagnostics.SiteBinding.Detail</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.SiteBinding</TypeName>
+      </ViewSelectedBy>
+      <ListControl>
+        <ListEntries>
+          <ListEntry>
+            <ListItems>
+              <ListItem><Label>Site name</Label><PropertyName>SiteName</PropertyName></ListItem>
+              <ListItem><Label>Site ID</Label><PropertyName>SiteId</PropertyName></ListItem>
+              <ListItem><Label>Site state</Label><PropertyName>SiteState</PropertyName></ListItem>
+              <ListItem><Label>Protocol</Label><PropertyName>Protocol</PropertyName></ListItem>
+              <ListItem>
+                <Label>IP address</Label>
+                <ScriptBlock>if ($_.IPAddress) { $_.IPAddress } else { '* (all unassigned)' }</ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Port</Label>
+                <ScriptBlock>if ($_.Port) { $_.Port } else { '-' }</ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Hostname</Label>
+                <ScriptBlock>if ($_.HostName) { $_.HostName } else { '— (not set)' }</ScriptBlock>
+              </ListItem>
+              <ListItem><Label>SNI enabled</Label><PropertyName>IsSni</PropertyName></ListItem>
+              <ListItem><Label>Central cert store</Label><PropertyName>IsCentralCertStore</PropertyName></ListItem>
+              <ListItem>
+                <Label>SSL flags (raw)</Label>
+                <ScriptBlock>if ($null -ne $_.SslFlags) { $_.SslFlags } else { '-' }</ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Cert thumbprint</Label>
+                <ScriptBlock>if ($_.CertThumbprint) { $_.CertThumbprint } else { '— (none)' }</ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Cert subject</Label>
+                <ScriptBlock>if ($_.CertSubject) { $_.CertSubject } else { '—' }</ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Cert issuer</Label>
+                <ScriptBlock>if ($_.CertIssuer) { $_.CertIssuer } else { '—' }</ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Cert expiry</Label>
+                <ScriptBlock>
+                  if ($_.CertExpiry) {
+                      "$($_.CertExpiry.ToString('dd/MM/yyyy HH:mm')) ($($_.DaysUntilExpiry) days)"
+                  } else { '—' }
+                </ScriptBlock>
+              </ListItem>
+              <ListItem><Label>Expiry status</Label><PropertyName>ExpiryStatus</PropertyName></ListItem>
+              <ListItem><Label>Wildcard cert</Label><PropertyName>IsWildcard</PropertyName></ListItem>
+              <ListItem>
+                <Label>Subject alt names</Label>
+                <ScriptBlock>
+                  if ($_.SubjectAltNames -and $_.SubjectAltNames.Count -gt 0) {
+                      $_.SubjectAltNames -join ', '
+                  } else { '— (none or not extracted)' }
+                </ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Notices</Label>
+                <ScriptBlock>
+                  if ($_.Notices -and $_.Notices.Count -gt 0) {
+                      ($_.Notices | ForEach-Object { "• $_" }) -join [Environment]::NewLine
+                  } else { '—' }
+                </ScriptBlock>
+              </ListItem>
+            </ListItems>
+          </ListEntry>
+        </ListEntries>
+      </ListControl>
+    </View>
+
+    <!-- ================================================================
          IISDiagnostics.AppPoolStatus
          Default table: the six things you need at a glance during triage.
          Detail list: everything including notices and recycling config.
