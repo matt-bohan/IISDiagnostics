@@ -40,6 +40,22 @@ Import-Module IISDiagnostics
 - `Get-IISHttpErrLog`
 - `Invoke-IISHttpErrAnalysis`
 
+## Testing
+
+This project uses [Pester](https://pester.dev/) for unit tests.
+
+Install Pester (CurrentUser scope):
+
+```powershell
+Install-Module Pester -Scope CurrentUser -Force -SkipPublisherCheck
+```
+
+Run tests from the module root:
+
+```powershell
+Invoke-Pester .\Tests
+```
+
 ## License
 
 This module is licensed under the MIT License.

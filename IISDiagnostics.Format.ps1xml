@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  IISDiagnostics_Format.ps1xml
+  Complete format file: StatusHelp (existing) + HttpErrEntry + HttpErrSummary
+-->
 <Configuration>
   <ViewDefinitions>
+
+    <!-- ================================================================
+         IISDiagnostics.StatusHelp  (existing views, unchanged)
+         ================================================================ -->
     <View>
       <Name>IISDiagnostics.StatusHelp</Name>
       <ViewSelectedBy>
@@ -47,6 +55,7 @@
         </ListEntries>
       </ListControl>
     </View>
+
     <View>
       <Name>IISDiagnostics.StatusHelp.Table</Name>
       <ViewSelectedBy>
@@ -95,5 +104,499 @@
         </TableRowEntries>
       </TableControl>
     </View>
+
+    <!-- ================================================================
+         IISDiagnostics.HttpErrEntry
+         Default: table showing the four fields you want at a glance
+         during triage. Timestamp, Reason, Method, StatusCode, Uri, ClientIp.
+         ================================================================ -->
+    <View>
+      <Name>IISDiagnostics.HttpErrEntry</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.HttpErrEntry</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader>
+            <Label>Timestamp</Label>
+            <Width>21</Width>
+            <Alignment>Left</Alignment>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Port</Label>
+            <Width>6</Width>
+            <Alignment>Right</Alignment>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Reason</Label>
+            <Width>28</Width>
+            <Alignment>Left</Alignment>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>SC</Label>
+            <Width>4</Width>
+            <Alignment>Right</Alignment>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Method</Label>
+            <Width>8</Width>
+            <Alignment>Left</Alignment>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Uri</Label>
+            <Width>40</Width>
+            <Alignment>Left</Alignment>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>ClientIp</Label>
+            <Width>16</Width>
+            <Alignment>Left</Alignment>
+          </TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem>
+                <ScriptBlock>
+                  if ($_.Timestamp) { $_.Timestamp.ToString('dd/MM/yyyy HH:mm:ss') } else { '-' }
+                </ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>
+                  if ($_.ServerPort) { $_.ServerPort } else { '-' }
+                </ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>Reason</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>
+                  if ($_.StatusCode) { $_.StatusCode } else { '-' }
+                </ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>
+                  if ($_.Method) { $_.Method } else { '-' }
+                </ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>Uri</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>ClientIp</PropertyName>
+              </TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+
+    <!-- Detail list for a single HttpErrEntry (Format-List or single result) -->
+    <View>
+      <Name>IISDiagnostics.HttpErrEntry.Detail</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.HttpErrEntry</TypeName>
+      </ViewSelectedBy>
+      <ListControl>
+        <ListEntries>
+          <ListEntry>
+            <ListItems>
+              <ListItem>
+                <Label>Timestamp (local)</Label>
+                <ScriptBlock>
+                  if ($_.Timestamp) { $_.Timestamp.ToString('dd/MM/yyyy HH:mm:ss') } else { '-' }
+                </ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Reason</Label>
+                <PropertyName>Reason</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>What it means</Label>
+                <PropertyName>ReasonDescription</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Status code</Label>
+                <ScriptBlock>
+                  if ($_.StatusCode) { $_.StatusCode } else { '— (HTTP.sys dropped before status was set)' }
+                </ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Method</Label>
+                <ScriptBlock>if ($_.Method) { $_.Method } else { '-' }</ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>URI</Label>
+                <ScriptBlock>if ($_.Uri) { $_.Uri } else { '-' }</ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Client</Label>
+                <ScriptBlock>
+                  '{0}:{1}' -f ($_.ClientIp ?? '-'), ($_.ClientPort ?? '-')
+                </ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Server</Label>
+                <ScriptBlock>
+                  '{0}:{1}' -f ($_.ServerIp ?? '-'), ($_.ServerPort ?? '-')
+                </ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>HTTP version</Label>
+                <ScriptBlock>if ($_.HttpVersion) { $_.HttpVersion } else { '-' }</ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>IIS site ID</Label>
+                <ScriptBlock>if ($_.SiteId) { $_.SiteId } else { '-' }</ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Queue name</Label>
+                <ScriptBlock>if ($_.QueueName) { $_.QueueName } else { '-' }</ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Source file</Label>
+                <PropertyName>SourceFile</PropertyName>
+              </ListItem>
+            </ListItems>
+          </ListEntry>
+        </ListEntries>
+      </ListControl>
+    </View>
+
+    <!-- ================================================================
+         IISDiagnostics.HttpErrSummary
+         List view: overview header, then the pre-rendered display strings.
+         ================================================================ -->
+    <View>
+      <Name>IISDiagnostics.HttpErrSummary</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.HttpErrSummary</TypeName>
+      </ViewSelectedBy>
+      <ListControl>
+        <ListEntries>
+          <ListEntry>
+            <ListItems>
+              <ListItem>
+                <Label>Window start</Label>
+                <ScriptBlock>$_.StartTime.ToString('dd/MM/yyyy HH:mm:ss')</ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Window end</Label>
+                <ScriptBlock>$_.EndTime.ToString('dd/MM/yyyy HH:mm:ss')</ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Log files scanned</Label>
+                <PropertyName>LogFilesScanned</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Total entries</Label>
+                <PropertyName>TotalEntries</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Earliest entry</Label>
+                <ScriptBlock>
+                  if ($_.EarliestEntry) { $_.EarliestEntry.ToString('dd/MM/yyyy HH:mm:ss') } else { '-' }
+                </ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Latest entry</Label>
+                <ScriptBlock>
+                  if ($_.LatestEntry) { $_.LatestEntry.ToString('dd/MM/yyyy HH:mm:ss') } else { '-' }
+                </ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Reason breakdown</Label>
+                <PropertyName>ReasonBreakdownDisplay</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Top client IPs</Label>
+                <PropertyName>TopClientsDisplay</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Top URIs</Label>
+                <PropertyName>TopUrisDisplay</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>By server port</Label>
+                <PropertyName>PortBreakdownDisplay</PropertyName>
+              </ListItem>
+            </ListItems>
+          </ListEntry>
+        </ListEntries>
+      </ListControl>
+    </View>
+
+    <!-- ================================================================
+         IISDiagnostics.AppPoolStatus
+         Default table: the six things you need at a glance during triage.
+         Detail list: everything including notices and recycling config.
+         ================================================================ -->
+    <View>
+      <Name>IISDiagnostics.AppPoolStatus</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.AppPoolStatus</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader>
+            <Label>Name</Label>
+            <Width>28</Width>
+            <Alignment>Left</Alignment>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>State</Label>
+            <Width>10</Width>
+            <Alignment>Left</Alignment>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Identity</Label>
+            <Width>24</Width>
+            <Alignment>Left</Alignment>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>AccountStatus</Label>
+            <Width>15</Width>
+            <Alignment>Left</Alignment>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>WPs</Label>
+            <Width>4</Width>
+            <Alignment>Right</Alignment>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>RapidFail</Label>
+            <Width>10</Width>
+            <Alignment>Left</Alignment>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Notices</Label>
+            <Width>12</Width>
+            <Alignment>Left</Alignment>
+          </TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem>
+                <PropertyName>Name</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>State</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>
+                  if ($_.IdentityType -eq 'SpecificUser' -and $_.UserName) {
+                      $_.UserName
+                  } else {
+                      $_.IdentityType
+                  }
+                </ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>AccountStatus</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>WorkerProcessCount</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>
+                  if ($_.RapidFailProtectionEnabled) { 'Enabled' } else { 'Disabled' }
+                </ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>
+                  if ($_.Notices -and $_.Notices.Count -gt 0) {
+                      "$($_.Notices.Count) notice(s)"
+                  } else { '-' }
+                </ScriptBlock>
+              </TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+
+    <View>
+      <Name>IISDiagnostics.AppPoolStatus.Detail</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.AppPoolStatus</TypeName>
+      </ViewSelectedBy>
+      <ListControl>
+        <ListEntries>
+          <ListEntry>
+            <ListItems>
+              <ListItem>
+                <Label>Name</Label>
+                <PropertyName>Name</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>State</Label>
+                <PropertyName>State</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Auto start</Label>
+                <PropertyName>AutoStart</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Start mode</Label>
+                <PropertyName>StartMode</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Pipeline mode</Label>
+                <PropertyName>PipelineMode</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Runtime version</Label>
+                <PropertyName>RuntimeVersion</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Queue length</Label>
+                <PropertyName>QueueLength</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Identity type</Label>
+                <PropertyName>IdentityType</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Username</Label>
+                <ScriptBlock>if ($_.UserName) { $_.UserName } else { '— (built-in identity)' }</ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Account status</Label>
+                <PropertyName>AccountStatus</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Account detail</Label>
+                <PropertyName>AccountStatusDetail</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Rapid-fail protection</Label>
+                <ScriptBlock>
+                  if ($_.RapidFailProtectionEnabled) {
+                      "Enabled — max $($_.RapidFailProtectionMaxCrashes) crashes per $($_.RapidFailProtectionInterval)"
+                  } else { 'Disabled' }
+                </ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Worker processes</Label>
+                <ScriptBlock>
+                  if ($_.WorkerProcessCount -gt 0) {
+                      "$($_.WorkerProcessCount) running (PID: $($_.WorkerProcessIds -join ', '))"
+                  } else { '0 running' }
+                </ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Recycle schedule</Label>
+                <ScriptBlock>
+                  $parts = @()
+                  if ($_.RecycleTimeMinutes -gt 0) { $parts += "Every $($_.RecycleTimeMinutes) min" }
+                  if ($_.RecycleSchedule -and $_.RecycleSchedule.Count -gt 0) { $parts += "At: $($_.RecycleSchedule -join ', ')" }
+                  if ($_.RecycleMemoryKb -gt 0) { $parts += "Memory: $($_.RecycleMemoryKb) KB" }
+                  if ($_.RecyclePrivateMemoryKb -gt 0) { $parts += "Private: $($_.RecyclePrivateMemoryKb) KB" }
+                  if ($parts) { $parts -join ' | ' } else { 'Not configured' }
+                </ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Notices</Label>
+                <ScriptBlock>
+                  if ($_.Notices -and $_.Notices.Count -gt 0) {
+                      ($_.Notices | ForEach-Object { "• $_" }) -join [Environment]::NewLine
+                  } else { '—' }
+                </ScriptBlock>
+              </ListItem>
+            </ListItems>
+          </ListEntry>
+        </ListEntries>
+      </ListControl>
+    </View>
+
+    <!-- ================================================================
+         IISDiagnostics.HttpErrAnalysis
+         Leads with the overall severity and window, then the findings block.
+         ================================================================ -->
+    <View>
+      <Name>IISDiagnostics.HttpErrAnalysis</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.HttpErrAnalysis</TypeName>
+      </ViewSelectedBy>
+      <ListControl>
+        <ListEntries>
+          <ListEntry>
+            <ListItems>
+              <ListItem>
+                <Label>Overall severity</Label>
+                <PropertyName>OverallSeverity</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Generated at</Label>
+                <ScriptBlock>$_.GeneratedAt.ToString('dd/MM/yyyy HH:mm:ss')</ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Window start</Label>
+                <ScriptBlock>$_.StartTime.ToString('dd/MM/yyyy HH:mm:ss')</ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Window end</Label>
+                <ScriptBlock>$_.EndTime.ToString('dd/MM/yyyy HH:mm:ss')</ScriptBlock>
+              </ListItem>
+              <ListItem>
+                <Label>Total HTTPERR entries</Label>
+                <PropertyName>TotalEntries</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Findings</Label>
+                <PropertyName>FindingsDisplay</PropertyName>
+              </ListItem>
+            </ListItems>
+          </ListEntry>
+        </ListEntries>
+      </ListControl>
+    </View>
+
+    <!-- ================================================================
+         IISDiagnostics.HttpErrFinding
+         Table view for when the caller pipes $result.Findings
+         ================================================================ -->
+    <View>
+      <Name>IISDiagnostics.HttpErrFinding</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.HttpErrFinding</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader>
+            <Label>Severity</Label>
+            <Width>10</Width>
+            <Alignment>Left</Alignment>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Category</Label>
+            <Width>22</Width>
+            <Alignment>Left</Alignment>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Title</Label>
+            <Width>55</Width>
+            <Alignment>Left</Alignment>
+          </TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem>
+                <PropertyName>Severity</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>Category</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>Title</PropertyName>
+              </TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+
   </ViewDefinitions>
 </Configuration>
