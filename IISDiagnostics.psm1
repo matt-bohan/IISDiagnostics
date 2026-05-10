@@ -23,7 +23,9 @@ $publicFunctions = @(
     'Invoke-IISHttpErrAnalysis',
     'Get-IISAppPoolStatus',
     'Get-IISSiteBindingReport',
-    'Get-IISSiteSummary'
+    'Get-IISSiteSummary',
+    'Get-IISW3CLog',
+    'Invoke-IISW3CLogAnalysis'
 )
 
 Export-ModuleMember -Function $publicFunctions

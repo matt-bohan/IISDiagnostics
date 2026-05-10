@@ -1,5 +1,39 @@
 {
   "http": {
+    "200": {
+      "title": "OK",
+      "description": "The request succeeded and the server returned the requested resource or operation result.",
+      "serverAdminConcern": "Low — Healthy response indicating IIS and the application pipeline completed normally.",
+      "applicationSupportConcern": "Low — Baseline success status used for normal request handling.",
+      "likelyCauses": [
+        "Request matched a valid route, handler, or static file",
+        "Authentication and authorization checks passed",
+        "No upstream timeout or dependency failure occurred"
+      ],
+      "checks": [
+        "If unexpected, verify client cache-control headers and request URL",
+        "Review application logs to confirm expected business behavior",
+        "Use W3C fields sc-status, sc-substatus, time-taken for performance analysis"
+      ],
+      "seeAlso": []
+    },
+    "304": {
+      "title": "Not Modified",
+      "description": "The resource has not changed since the client's last request, so no response body is sent.",
+      "serverAdminConcern": "Low — Expected cache validation behavior that reduces bandwidth and server load.",
+      "applicationSupportConcern": "Low — Indicates conditional request headers were processed correctly.",
+      "likelyCauses": [
+        "Client sent If-None-Match with a matching ETag",
+        "Client sent If-Modified-Since and the resource timestamp has not changed",
+        "Static file or proxy cache validation is working as intended"
+      ],
+      "checks": [
+        "Confirm Cache-Control, ETag, and Last-Modified headers are configured as expected",
+        "If unexpected, compare response headers between 200 and 304 flows",
+        "Verify proxies/CDNs are not overriding caching policy"
+      ],
+      "seeAlso": []
+    },
     "400": {
       "title": "Bad Request",
       "description": "The server cannot process the request because the client sent malformed syntax, invalid headers, oversized fields, or content that violates rules.",
@@ -233,6 +267,227 @@
     }
   },
   "substatus": {
+    "200.0": {
+      "title": "200.0 - OK",
+      "description": "Standard IIS log success status. The request completed successfully with no special substatus condition.",
+      "serverAdminConcern": "Low — Normal successful request.",
+      "applicationSupportConcern": "Low — Normal successful response.",
+      "likelyCauses": [
+        "The request was processed successfully end-to-end",
+        "No IIS module, authentication, or authorization error occurred",
+        "No application exception interrupted response generation"
+      ],
+      "checks": [
+        "Treat as healthy baseline traffic",
+        "If performance is poor, review time-taken and downstream dependency metrics",
+        "Correlate with business logs if users still report issues"
+      ],
+      "seeAlso": []
+    },
+    "304.0": {
+      "title": "304.0 - Not Modified",
+      "description": "Standard IIS cache-validation success status. Resource unchanged, so body is omitted.",
+      "serverAdminConcern": "Low — Common and desirable for cacheable content.",
+      "applicationSupportConcern": "Low — Indicates conditional GET handling is functioning.",
+      "likelyCauses": [
+        "Matching ETag in If-None-Match request header",
+        "Unchanged Last-Modified timestamp with If-Modified-Since",
+        "Browser or proxy revalidation of cached content"
+      ],
+      "checks": [
+        "Verify cache headers (ETag, Last-Modified, Cache-Control) align with policy",
+        "If content should have changed, confirm deployment invalidated caches correctly",
+        "Check CDN/proxy cache behavior for stale metadata"
+      ],
+      "seeAlso": []
+    },
+    "400.0": {
+      "title": "400.0 - Bad Request",
+      "description": "IIS received a malformed request and rejected it with no special substatus condition.",
+      "serverAdminConcern": "Low — Usually isolated to specific clients, bots, or integrations.",
+      "applicationSupportConcern": "Medium — Can indicate API contract or serialization issues.",
+      "likelyCauses": [
+        "Malformed URL, headers, cookies, or payload",
+        "Client or proxy sending invalid HTTP syntax",
+        "Request filtering rules rejecting malformed input"
+      ],
+      "checks": [
+        "Capture the raw request and compare with API expectations",
+        "Review IIS and application logs for repeat client patterns",
+        "Inspect reverse proxy/WAF rewriting behavior"
+      ],
+      "seeAlso": []
+    },
+    "401.0": {
+      "title": "401.0 - Unauthorized",
+      "description": "Authentication failed or missing credentials with no more specific IIS 401.x detail recorded.",
+      "serverAdminConcern": "Medium — Authentication provider/configuration may be mismatched.",
+      "applicationSupportConcern": "Medium — Client credentials or token flow may be incorrect.",
+      "likelyCauses": [
+        "Missing Authorization header or expired credentials",
+        "Authentication scheme mismatch (Negotiate/NTLM/Basic/Bearer)",
+        "Identity provider or domain trust issue"
+      ],
+      "checks": [
+        "Verify enabled IIS authentication modes for the site",
+        "Test with known-good credentials and compare behavior",
+        "Correlate with 401.1/401.2/401.3 events if present"
+      ],
+      "seeAlso": []
+    },
+    "403.0": {
+      "title": "403.0 - Forbidden",
+      "description": "IIS denied access with no more specific 403.x substatus provided.",
+      "serverAdminConcern": "Medium — Permissions, policy, or filtering may deny valid requests.",
+      "applicationSupportConcern": "Medium — Authorization rules may be too restrictive.",
+      "likelyCauses": [
+        "NTFS ACL or URL authorization deny rule",
+        "Request filtering or IP restriction policy",
+        "HTTPS/certificate requirement not satisfied"
+      ],
+      "checks": [
+        "Review URL authorization and request filtering configuration",
+        "Check site folder permissions for app pool identity",
+        "Verify binding/certificate requirements match client access pattern"
+      ],
+      "seeAlso": []
+    },
+    "404.0": {
+      "title": "404.0 - Not Found",
+      "description": "Requested resource was not found with no more specific IIS 404.x classification.",
+      "serverAdminConcern": "Low — Common in normal traffic, but spikes can indicate deployment or routing issues.",
+      "applicationSupportConcern": "Medium — Route, content path, or version mismatch likely.",
+      "likelyCauses": [
+        "Missing file or endpoint",
+        "Incorrect virtual directory or rewrite target",
+        "Client requesting wrong path or API version"
+      ],
+      "checks": [
+        "Confirm physical file or route exists on target site",
+        "Review rewrite/redirect rules and SPA fallback behavior",
+        "Correlate with deployment changes and recently moved content"
+      ],
+      "seeAlso": []
+    },
+    "408.0": {
+      "title": "408.0 - Request Timeout",
+      "description": "Client did not complete the request in time and IIS/HTTP.sys timed out the request.",
+      "serverAdminConcern": "Low to Medium — Usually client or network behavior unless sustained.",
+      "applicationSupportConcern": "Low — Often external to app logic.",
+      "likelyCauses": [
+        "Slow or interrupted client upload",
+        "Network latency or unstable connection",
+        "Timeout values too aggressive for workload"
+      ],
+      "checks": [
+        "Review client and proxy timeout settings end-to-end",
+        "Inspect network path for intermittent packet loss",
+        "Tune upload/request timeout thresholds when appropriate"
+      ],
+      "seeAlso": []
+    },
+    "413.0": {
+      "title": "413.0 - Payload Too Large",
+      "description": "Request body exceeded configured limits with no additional IIS-specific substatus.",
+      "serverAdminConcern": "Medium — Size limits likely misaligned across IIS/app/proxy.",
+      "applicationSupportConcern": "Medium — Client may need chunking/compression or limit guidance.",
+      "likelyCauses": [
+        "IIS requestFiltering maxAllowedContentLength too low",
+        "Application server body limit exceeded",
+        "Proxy/CDN upload limit lower than IIS"
+      ],
+      "checks": [
+        "Align payload limits across IIS, app runtime, and proxies",
+        "Validate upload scenario with representative file sizes",
+        "Consider chunked uploads for large payload workflows"
+      ],
+      "seeAlso": []
+    },
+    "429.0": {
+      "title": "429.0 - Too Many Requests",
+      "description": "Request was throttled due to rate limiting with no additional substatus detail.",
+      "serverAdminConcern": "Medium — Throttling may indicate abuse, mis-tuned limits, or traffic bursts.",
+      "applicationSupportConcern": "Medium — Clients should use backoff and retry guidance.",
+      "likelyCauses": [
+        "Rate-limiting policy triggered in IIS, proxy, or gateway",
+        "Burst traffic from polling clients or automation",
+        "Missing exponential backoff in callers"
+      ],
+      "checks": [
+        "Identify which component emitted 429 responses",
+        "Review Retry-After handling in clients",
+        "Tune limits if legitimate traffic is being throttled"
+      ],
+      "seeAlso": []
+    },
+    "501.0": {
+      "title": "501.0 - Not Implemented",
+      "description": "Requested method or feature is not implemented/allowed, with no specific IIS 501.x detail.",
+      "serverAdminConcern": "Low — Often handler mapping or verb support issue.",
+      "applicationSupportConcern": "Medium — Client likely using unsupported HTTP method.",
+      "likelyCauses": [
+        "Missing handler for requested method",
+        "WebDAV or handler conflicts",
+        "API called with incorrect verb"
+      ],
+      "checks": [
+        "Review handler mappings and allowed verbs",
+        "Confirm client method matches API contract",
+        "Disable conflicting modules if they intercept the route"
+      ],
+      "seeAlso": []
+    },
+    "502.0": {
+      "title": "502.0 - Bad Gateway",
+      "description": "Gateway/proxy chain returned an invalid upstream response with no specific 502.x detail.",
+      "serverAdminConcern": "High — Upstream connectivity or proxy behavior needs review.",
+      "applicationSupportConcern": "Medium — Backend app may be unstable or unreachable.",
+      "likelyCauses": [
+        "Upstream server reset or malformed response",
+        "Proxy-to-origin TLS or certificate mismatch",
+        "Origin health probe failures"
+      ],
+      "checks": [
+        "Test upstream endpoint directly from proxy host",
+        "Inspect ARR/reverse proxy logs for upstream errors",
+        "Validate TLS bindings and trust between tiers"
+      ],
+      "seeAlso": []
+    },
+    "503.0": {
+      "title": "503.0 - Service Unavailable",
+      "description": "Service was unavailable with no additional IIS 503.x substatus detail.",
+      "serverAdminConcern": "High — App pool availability/capacity issue likely.",
+      "applicationSupportConcern": "Medium to High — Startup faults or dependency outages may surface as 503.",
+      "likelyCauses": [
+        "Application pool stopped or recycling",
+        "Queue saturation or rapid-fail protection",
+        "Maintenance mode or no healthy upstream targets"
+      ],
+      "checks": [
+        "Check current app pool state and recent recycles",
+        "Review HTTPERR logs for Timer_AppPool/Rejected/QueueFull",
+        "Validate health checks and upstream availability"
+      ],
+      "seeAlso": []
+    },
+    "504.0": {
+      "title": "504.0 - Gateway Timeout",
+      "description": "Proxy/gateway timed out waiting for upstream response with no extra IIS-specific detail.",
+      "serverAdminConcern": "High — Timeout policy or backend latency mismatch.",
+      "applicationSupportConcern": "High — Slow dependencies or long-running requests likely.",
+      "likelyCauses": [
+        "Backend response exceeded gateway timeout",
+        "Slow database or external service calls",
+        "Thread pool saturation delaying responses"
+      ],
+      "checks": [
+        "Compare gateway timeout values with backend response profiles",
+        "Profile slow endpoints and dependency calls",
+        "Tune timeout values only after confirming root latency causes"
+      ],
+      "seeAlso": []
+    },
     "401.1": {
       "title": "401.1 - Logon failed",
       "description": "IIS rejected the supplied credentials during authentication before authorization ran.",

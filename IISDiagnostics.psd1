@@ -22,7 +22,9 @@ Install for current user: copy the IISDiagnostics folder to
                             'Invoke-IISHttpErrAnalysis',
                             'Get-IISAppPoolStatus',
                             'Get-IISSiteBindingReport',
-                            'Get-IISSiteSummary'
+                            'Get-IISSiteSummary',
+                            'Get-IISW3CLog',
+                            'Invoke-IISW3CLogAnalysis'
                             )
     RequiredAssemblies         = @('System.DirectoryServices')
     CmdletsToExport            = @()

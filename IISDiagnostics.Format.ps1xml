@@ -327,6 +327,233 @@
     </View>
 
     <!-- ================================================================
+         IISDiagnostics.W3CStatusGroup
+         Default table: one row per status combination — the at-a-glance view.
+         Detail list: full enrichment including causes, checks, top URIs.
+         ================================================================ -->
+    <View>
+      <Name>IISDiagnostics.W3CStatusGroup</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.W3CStatusGroup</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader><Label>StatusKey</Label><Width>11</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Count</Label><Width>8</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Pct</Label><Width>7</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Known</Label><Width>6</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Title</Label><Width>55</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>FirstSeen</Label><Width>9</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>LastSeen</Label><Width>9</Width><Alignment>Left</Alignment></TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem><PropertyName>StatusKey</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>Count</PropertyName></TableColumnItem>
+              <TableColumnItem><ScriptBlock>"$($_.Percent)%"</ScriptBlock></TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($_.IsKnown) { 'Yes' } else { '?' }</ScriptBlock></TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($_.Title) { $_.Title } else { '(not in data file)' }</ScriptBlock></TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($_.FirstSeen) { $_.FirstSeen.ToString('HH:mm:ss') } else { '-' }</ScriptBlock></TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($_.LastSeen) { $_.LastSeen.ToString('HH:mm:ss') } else { '-' }</ScriptBlock></TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+
+    <View>
+      <Name>IISDiagnostics.W3CStatusGroup.Detail</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.W3CStatusGroup</TypeName>
+      </ViewSelectedBy>
+      <ListControl>
+        <ListEntries>
+          <ListEntry>
+            <ListItems>
+              <ListItem><Label>Status key</Label><PropertyName>StatusKey</PropertyName></ListItem>
+              <ListItem><Label>Status code</Label><PropertyName>StatusCode</PropertyName></ListItem>
+              <ListItem><Label>Substatus</Label><PropertyName>SubStatus</PropertyName></ListItem>
+              <ListItem><Label>Count</Label><PropertyName>Count</PropertyName></ListItem>
+              <ListItem><Label>Percent of total</Label><ScriptBlock>"$($_.Percent)%"</ScriptBlock></ListItem>
+              <ListItem><Label>First seen</Label><ScriptBlock>if ($_.FirstSeen) { $_.FirstSeen.ToString('dd/MM/yyyy HH:mm:ss') } else { '-' }</ScriptBlock></ListItem>
+              <ListItem><Label>Last seen</Label><ScriptBlock>if ($_.LastSeen) { $_.LastSeen.ToString('dd/MM/yyyy HH:mm:ss') } else { '-' }</ScriptBlock></ListItem>
+              <ListItem>
+                <Label>In data file</Label>
+                <ScriptBlock>
+                  if ($_.IsKnown) {
+                      "Yes ($($_.LookupSource))"
+                  } else {
+                      "No — run: Get-IISStatusHelp '$($_.StatusKey)' for further guidance"
+                  }
+                </ScriptBlock>
+              </ListItem>
+              <ListItem><Label>Title</Label><ScriptBlock>if ($_.Title) { $_.Title } else { '(not documented)' }</ScriptBlock></ListItem>
+              <ListItem><Label>Description</Label><ScriptBlock>if ($_.Description) { $_.Description } else { '—' }</ScriptBlock></ListItem>
+              <ListItem><Label>Server admin concern</Label><ScriptBlock>if ($_.ServerAdminConcern) { $_.ServerAdminConcern } else { '—' }</ScriptBlock></ListItem>
+              <ListItem><Label>App support concern</Label><ScriptBlock>if ($_.ApplicationSupportConcern) { $_.ApplicationSupportConcern } else { '—' }</ScriptBlock></ListItem>
+              <ListItem><Label>Likely causes</Label><PropertyName>LikelyCausesDisplay</PropertyName></ListItem>
+              <ListItem><Label>Things to check</Label><PropertyName>ChecksDisplay</PropertyName></ListItem>
+              <ListItem><Label>Top URIs</Label><PropertyName>TopUrisDisplay</PropertyName></ListItem>
+              <ListItem><Label>Top clients</Label><PropertyName>TopClientsDisplay</PropertyName></ListItem>
+            </ListItems>
+          </ListEntry>
+        </ListEntries>
+      </ListControl>
+    </View>
+
+    <!-- ================================================================
+         IISDiagnostics.W3CLogAnalysis  (the outer wrapper object)
+         Default: show the groups table. Format-List for the summary header.
+         ================================================================ -->
+    <View>
+      <Name>IISDiagnostics.W3CLogAnalysis</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.W3CLogAnalysis</TypeName>
+      </ViewSelectedBy>
+      <ListControl>
+        <ListEntries>
+          <ListEntry>
+            <ListItems>
+              <ListItem><Label>Generated at</Label><ScriptBlock>$_.GeneratedAt.ToString('dd/MM/yyyy HH:mm:ss')</ScriptBlock></ListItem>
+              <ListItem><Label>Window start</Label><ScriptBlock>$_.StartTime.ToString('dd/MM/yyyy HH:mm:ss')</ScriptBlock></ListItem>
+              <ListItem><Label>Window end</Label><ScriptBlock>$_.EndTime.ToString('dd/MM/yyyy HH:mm:ss')</ScriptBlock></ListItem>
+              <ListItem><Label>Total requests</Label><PropertyName>TotalRequests</PropertyName></ListItem>
+              <ListItem><Label>Status groups</Label><PropertyName>TotalGroups</PropertyName></ListItem>
+              <ListItem><Label>Error groups (4xx+5xx)</Label><ScriptBlock>$_.ErrorGroups.Count</ScriptBlock></ListItem>
+              <ListItem><Label>Server error groups (5xx)</Label><ScriptBlock>$_.ServerErrors.Count</ScriptBlock></ListItem>
+              <ListItem><Label>Undocumented groups</Label><ScriptBlock>
+                if ($_.UnknownGroups.Count -gt 0) {
+                    "$($_.UnknownGroups.Count) — run Get-IISStatusHelp for each, or check the StatusCodes.json data file"
+                } else { '0' }
+              </ScriptBlock></ListItem>
+              <ListItem>
+                <Label>All groups</Label>
+                <ScriptBlock>
+                  ($_.Groups | ForEach-Object {
+                      $title = if ($_.Title) { $_.Title } else { '(not in data file)' }
+                      '{0,-11} {1,6:N0}  {2,5}%  {3}' -f $_.StatusKey, $_.Count, $_.Percent, $title
+                  }) -join [Environment]::NewLine
+                </ScriptBlock>
+              </ListItem>
+            </ListItems>
+          </ListEntry>
+        </ListEntries>
+      </ListControl>
+    </View>
+
+    <!-- ================================================================
+         IISDiagnostics.W3CEntry
+         Default table: triage columns. Detail list via Format-List.
+         ================================================================ -->
+    <View>
+      <Name>IISDiagnostics.W3CEntry</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.W3CEntry</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader><Label>Timestamp</Label><Width>21</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>SC</Label><Width>4</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Sub</Label><Width>4</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>W32</Label><Width>5</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Method</Label><Width>8</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>UriStem</Label><Width>42</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Ms</Label><Width>8</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>ClientIp</Label><Width>16</Width><Alignment>Left</Alignment></TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem><ScriptBlock>if ($_.Timestamp) { $_.Timestamp.ToString('dd/MM/yyyy HH:mm:ss') } else { '-' }</ScriptBlock></TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($_.StatusCode)  { $_.StatusCode  } else { '-' }</ScriptBlock></TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($null -ne $_.SubStatus)   { $_.SubStatus   } else { '-' }</ScriptBlock></TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($null -ne $_.Win32Status) { $_.Win32Status } else { '-' }</ScriptBlock></TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($_.Method)   { $_.Method   } else { '-' }</ScriptBlock></TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($_.UriStem)  { $_.UriStem  } else { '-' }</ScriptBlock></TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($null -ne $_.TimeTakenMs) { $_.TimeTakenMs } else { '-' }</ScriptBlock></TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($_.ClientIp) { $_.ClientIp } else { '-' }</ScriptBlock></TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+
+    <View>
+      <Name>IISDiagnostics.W3CEntry.Detail</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.W3CEntry</TypeName>
+      </ViewSelectedBy>
+      <ListControl>
+        <ListEntries>
+          <ListEntry>
+            <ListItems>
+              <ListItem><Label>Timestamp (local)</Label><ScriptBlock>if ($_.Timestamp) { $_.Timestamp.ToString('dd/MM/yyyy HH:mm:ss') } else { '-' }</ScriptBlock></ListItem>
+              <ListItem><Label>Site log folder</Label><ScriptBlock>if ($_.SiteLogFolder) { $_.SiteLogFolder } else { '-' }</ScriptBlock></ListItem>
+              <ListItem><Label>Site name (s-sitename)</Label><ScriptBlock>if ($_.SiteName) { $_.SiteName } else { '— (s-sitename not logged)' }</ScriptBlock></ListItem>
+              <ListItem><Label>Method</Label><ScriptBlock>if ($_.Method) { $_.Method } else { '-' }</ScriptBlock></ListItem>
+              <ListItem><Label>URI stem</Label><ScriptBlock>if ($_.UriStem) { $_.UriStem } else { '-' }</ScriptBlock></ListItem>
+              <ListItem><Label>URI query</Label><ScriptBlock>if ($_.UriQuery) { $_.UriQuery } else { '-' }</ScriptBlock></ListItem>
+              <ListItem><Label>HTTP version</Label><ScriptBlock>if ($_.HttpVersion) { $_.HttpVersion } else { '-' }</ScriptBlock></ListItem>
+              <ListItem><Label>Status code</Label><ScriptBlock>if ($_.StatusCode) { $_.StatusCode } else { '-' }</ScriptBlock></ListItem>
+              <ListItem><Label>Substatus</Label><ScriptBlock>if ($null -ne $_.SubStatus) { $_.SubStatus } else { '-' }</ScriptBlock></ListItem>
+              <ListItem>
+                <Label>Win32 status</Label>
+                <ScriptBlock>
+                  if ($null -ne $_.Win32Status) {
+                      if ($_.Win32Status -eq 64) { "64 — ERROR_NETNAME_DELETED (connection reset)" }
+                      elseif ($_.Win32Status -eq 0) { "0 — Success" }
+                      else { $_.Win32Status }
+                  } else { '-' }
+                </ScriptBlock>
+              </ListItem>
+              <ListItem><Label>Connection reset</Label><PropertyName>IsConnectionReset</PropertyName></ListItem>
+              <ListItem><Label>Time taken (ms)</Label><ScriptBlock>if ($null -ne $_.TimeTakenMs) { $_.TimeTakenMs } else { '-' }</ScriptBlock></ListItem>
+              <ListItem><Label>Bytes sent</Label><ScriptBlock>if ($null -ne $_.BytesSent) { $_.BytesSent } else { '-' }</ScriptBlock></ListItem>
+              <ListItem><Label>Bytes received</Label><ScriptBlock>if ($null -ne $_.BytesReceived) { $_.BytesReceived } else { '-' }</ScriptBlock></ListItem>
+              <ListItem><Label>Client</Label><ScriptBlock>if ($_.ClientIp) { "$($_.ClientIp)$(if ($_.ClientPort) { ":$($_.ClientPort)" })" } else { '-' }</ScriptBlock></ListItem>
+              <ListItem><Label>Server</Label><ScriptBlock>if ($_.ServerIp) { "$($_.ServerIp)$(if ($_.ServerPort) { ":$($_.ServerPort)" })" } else { '-' }</ScriptBlock></ListItem>
+              <ListItem><Label>Host header</Label><ScriptBlock>if ($_.Host) { $_.Host } else { '-' }</ScriptBlock></ListItem>
+              <ListItem><Label>Username</Label><ScriptBlock>if ($_.Username) { $_.Username } else { '-' }</ScriptBlock></ListItem>
+              <ListItem><Label>User agent</Label><ScriptBlock>if ($_.UserAgent) { $_.UserAgent } else { '-' }</ScriptBlock></ListItem>
+              <ListItem><Label>Source file</Label><PropertyName>SourceFile</PropertyName></ListItem>
+            </ListItems>
+          </ListEntry>
+        </ListEntries>
+      </ListControl>
+    </View>
+
+    <!-- ================================================================
+         IISDiagnostics.W3CSummary
+         ================================================================ -->
+    <View>
+      <Name>IISDiagnostics.W3CSummary</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.W3CSummary</TypeName>
+      </ViewSelectedBy>
+      <ListControl>
+        <ListEntries>
+          <ListEntry>
+            <ListItems>
+              <ListItem><Label>Window start</Label><ScriptBlock>$_.StartTime.ToString('dd/MM/yyyy HH:mm:ss')</ScriptBlock></ListItem>
+              <ListItem><Label>Window end</Label><ScriptBlock>$_.EndTime.ToString('dd/MM/yyyy HH:mm:ss')</ScriptBlock></ListItem>
+              <ListItem><Label>Log files scanned</Label><PropertyName>LogFilesScanned</PropertyName></ListItem>
+              <ListItem><Label>Total requests</Label><PropertyName>TotalRequests</PropertyName></ListItem>
+              <ListItem><Label>4xx errors</Label><PropertyName>ErrorRequests4xx</PropertyName></ListItem>
+              <ListItem><Label>5xx errors</Label><PropertyName>ErrorRequests5xx</PropertyName></ListItem>
+              <ListItem><Label>Error rate</Label><ScriptBlock>"$($_.ErrorRate)%"</ScriptBlock></ListItem>
+              <ListItem><Label>Connection resets (win32=64)</Label><PropertyName>ConnectionResetDisplay</PropertyName></ListItem>
+              <ListItem><Label>Slow requests (&gt;threshold)</Label><ScriptBlock>"$($_.SlowRequestCount) requests exceeded $($_.SlowThresholdMs)ms"</ScriptBlock></ListItem>
+              <ListItem><Label>Status breakdown</Label><PropertyName>StatusBreakdownDisplay</PropertyName></ListItem>
+              <ListItem><Label>Top URIs by count</Label><PropertyName>TopUrisByCountDisplay</PropertyName></ListItem>
+              <ListItem><Label>Slowest requests</Label><PropertyName>SlowestRequestsDisplay</PropertyName></ListItem>
+            </ListItems>
+          </ListEntry>
+        </ListEntries>
+      </ListControl>
+    </View>
+
+    <!-- ================================================================
          IISDiagnostics.SiteSummary
          Default table: one row per site — the at-a-glance overview.
          Detail list: expands notices with binding addresses.
