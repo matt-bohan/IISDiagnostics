@@ -6,8 +6,11 @@ function Get-IISW3CLog {
         Parses IIS W3C access logs and returns entries or a summary for a given time window.
 
     .DESCRIPTION
-        Reads IIS W3C-format access logs from the configured log directory (default:
-        %SystemDrive%\inetpub\logs\LogFiles).
+        Reads IIS W3C-format access logs. Without **-Path**, directories are resolved from
+        IIS configuration when the WebAdministration module is available (per-site **logFile**
+        directories, including custom drives and folder layouts). If discovery fails, the
+        cmdlet falls back to **siteDefaults** / central logging paths and then
+        **%SystemDrive%\inetpub\logs\LogFiles**.
 
         Unlike HTTPERR logs, W3C logs record requests that reached IIS and were processed
         by an application pool - including errors the application returned deliberately
@@ -160,29 +163,28 @@ function Get-IISW3CLog {
     $logDirs = [System.Collections.Generic.List[string]]::new()
 
     if ($PSBoundParameters.ContainsKey('Path')) {
+        $expandedPath = Expand-IISDiagnosticsLogPath -Path $Path
         # Explicit override - accept a file or directory
-        if (Test-Path -LiteralPath $Path -PathType Leaf) {
-            # Single file passed - treat its parent as the directory
-            $logDirs.Add((Split-Path $Path -Parent))
+        if (Test-Path -LiteralPath $expandedPath -PathType Leaf) {
+            $logDirs.Add((Split-Path -LiteralPath $expandedPath -Parent))
         }
-        elseif (Test-Path -LiteralPath $Path -PathType Container) {
-            $logDirs.Add($Path)
+        elseif (Test-Path -LiteralPath $expandedPath -PathType Container) {
+            $logDirs.Add($expandedPath)
         }
         else {
             $PSCmdlet.ThrowTerminatingError(
                 [System.Management.Automation.ErrorRecord]::new(
-                    [System.IO.IOException]::new("Path '$Path' does not exist."),
+                    [System.IO.IOException]::new("Path '$expandedPath' does not exist."),
                     'W3CPathNotFound',
                     [System.Management.Automation.ErrorCategory]::ObjectNotFound,
-                    $Path
+                    $expandedPath
                 )
             )
         }
     }
     else {
-        # Discover default log root from IIS configuration if WebAdministration is available,
-        # otherwise fall back to the well-known default location.
-        $logRoot = $null
+        # Prefer per-site directories from IIS (supports custom drives and non-default layouts).
+        $resolvedFromSites = @()
 
         if (Get-Module -Name WebAdministration -ListAvailable -ErrorAction SilentlyContinue) {
             try {
@@ -190,84 +192,141 @@ function Get-IISW3CLog {
                     Import-Module WebAdministration -ErrorAction Stop
                 }
 
-                if ($PSCmdlet.ParameterSetName -eq 'BySiteName') {
-                    # Resolve site name to ID and log directory
-                    $site = Get-ChildItem 'IIS:\Sites' -ErrorAction Stop |
-                            Where-Object { $_.Name -eq $SiteName } |
-                            Select-Object -First 1
-
-                    if (-not $site) {
-                        Write-Warning "Site '$SiteName' not found. Falling back to default log root."
-                    }
-                    else {
-                        $SiteId  = [int]$site.Id
-                        $siteLog = try { [string]$site.LogFile.Directory } catch { $null }
-
-                        if ($siteLog -and (Test-Path ($siteLog -replace '^%SystemDrive%', $env:SystemDrive))) {
-                            $logRoot = $siteLog -replace '^%SystemDrive%', $env:SystemDrive
-                        }
+                if ($PSCmdlet.ParameterSetName -eq 'AllSites') {
+                    $resolvedFromSites = @(Get-W3CLogDirectoriesFromAllSites)
+                    foreach ($d in $resolvedFromSites) {
+                        $logDirs.Add($d)
                     }
                 }
+                elseif ($PSCmdlet.ParameterSetName -in 'BySiteId', 'BySiteName') {
+                    $site = $null
+                    if ($PSCmdlet.ParameterSetName -eq 'BySiteName') {
+                        $site = Get-ChildItem -Path 'IIS:\Sites' -ErrorAction Stop |
+                            Where-Object { $_.Name -eq $SiteName } |
+                            Select-Object -First 1
+                        if ($site) {
+                            $SiteId = [int]$site.Id
+                        }
+                    }
+                    else {
+                        $site = Get-ChildItem -Path 'IIS:\Sites' -ErrorAction Stop |
+                            Where-Object { [int]$_.Id -eq $SiteId } |
+                            Select-Object -First 1
+                    }
 
-                if (-not $logRoot) {
-                    # Read the global default log directory from IIS config
-                    $globalLog = try {
-                        (Get-WebConfigurationProperty -Filter 'system.applicationHost/log' `
-                                                      -Name centralW3CLogFile.directory `
-                                                      -ErrorAction SilentlyContinue).Value
-                    } catch { $null }
+                    if (-not $site) {
+                        Write-Warning "Site not found in IIS (ParameterSet: $($PSCmdlet.ParameterSetName)). Falling back to folder layout under default root."
+                    }
+                    else {
+                        $rawDir = $null
+                        try {
+                            $cfgDir = Get-WebConfigurationProperty `
+                                -PSPath "IIS:\Sites\$($site.Name)" `
+                                -Filter 'system.applicationHost/sites/site/logFile' `
+                                -Name directory `
+                                -ErrorAction SilentlyContinue
+                            if ($cfgDir -and $cfgDir.Value) {
+                                $rawDir = [string]$cfgDir.Value
+                            }
+                        }
+                        catch { }
 
-                    if ($globalLog) {
-                        $logRoot = $globalLog -replace '^%SystemDrive%', $env:SystemDrive
+                        if (-not $rawDir) {
+                            try { $rawDir = [string]$site.LogFile.Directory } catch { }
+                        }
+
+                        if ($rawDir) {
+                            $resolvedOne = Resolve-W3CSiteLogDirectory -DirectoryFromIis $rawDir -SiteId ([int]$site.Id)
+                            if ($resolvedOne) {
+                                $resolvedFromSites = @($resolvedOne)
+                                $logDirs.Add($resolvedOne)
+                            }
+                        }
                     }
                 }
             }
             catch {
-                Write-Verbose "WebAdministration log path discovery failed: $_. Using default."
+                Write-Verbose "WebAdministration site log discovery failed: $_. Falling back to default layout."
             }
         }
 
-        # Final fallback - the IIS default that has been true since IIS 7
-        if (-not $logRoot) {
-            $logRoot = Join-Path $env:SystemDrive 'inetpub\logs\LogFiles'
-        }
+        # Fallback: classic LogFiles\W3SVCn layout under a configurable root
+        if ($logDirs.Count -eq 0) {
+            $logRoot = $null
 
-        if (-not (Test-Path -LiteralPath $logRoot)) {
-            $PSCmdlet.ThrowTerminatingError(
-                [System.Management.Automation.ErrorRecord]::new(
-                    [System.IO.DirectoryNotFoundException]::new(
-                        "W3C log root '$logRoot' not found. " +
-                        "Use -Path to specify the log directory explicitly, " +
-                        "or verify IIS is installed and W3C logging is enabled."),
-                    'W3CLogRootNotFound',
-                    [System.Management.Automation.ErrorCategory]::ObjectNotFound,
-                    $logRoot
+            if (Get-Module -Name WebAdministration -ErrorAction SilentlyContinue) {
+                try {
+                    $defaults = Get-WebConfigurationProperty `
+                        -PSPath 'MACHINE/WEBROOT/APPHOST' `
+                        -Filter 'system.applicationHost/sites/siteDefaults/logFile' `
+                        -Name directory `
+                        -ErrorAction SilentlyContinue
+                    if ($defaults -and $defaults.Value) {
+                        $logRoot = Expand-IISDiagnosticsLogPath -Path ([string]$defaults.Value)
+                    }
+
+                    if (-not $logRoot) {
+                        $central = Get-WebConfigurationProperty `
+                            -PSPath 'MACHINE/WEBROOT/APPHOST' `
+                            -Filter 'system.applicationHost/log' `
+                            -Name centralW3CLogFile.directory `
+                            -ErrorAction SilentlyContinue
+                        if ($central -and $central.Value) {
+                            $logRoot = Expand-IISDiagnosticsLogPath -Path ([string]$central.Value)
+                        }
+                    }
+                }
+                catch {
+                    Write-Verbose "Could not read applicationHost log paths: $_"
+                }
+            }
+
+            if (-not $logRoot) {
+                $logRoot = Join-Path $env:SystemDrive 'inetpub\logs\LogFiles'
+            }
+
+            if (-not (Test-Path -LiteralPath $logRoot)) {
+                $PSCmdlet.ThrowTerminatingError(
+                    [System.Management.Automation.ErrorRecord]::new(
+                        [System.IO.DirectoryNotFoundException]::new(
+                            "W3C log root '$logRoot' not found after IIS discovery and fallbacks. " +
+                            "Specify the folder that contains u_ex*.log (or W3SVCn subfolders) with -Path. " +
+                            "Check IIS Manager -> Sites -> site -> Logging, or applicationHost.config siteDefaults/logFile."),
+                        'W3CLogRootNotFound',
+                        [System.Management.Automation.ErrorCategory]::ObjectNotFound,
+                        $logRoot
+                    )
                 )
-            )
-        }
+            }
 
-        if ($PSCmdlet.ParameterSetName -in 'BySiteId','BySiteName') {
-            # Specific site - one subfolder
-            $subDir = Join-Path $logRoot "W3SVC$SiteId"
-            if (Test-Path -LiteralPath $subDir) {
-                $logDirs.Add($subDir)
+            if ($PSCmdlet.ParameterSetName -in 'BySiteId', 'BySiteName') {
+                $subDir = Join-Path $logRoot "W3SVC$SiteId"
+                if (Test-Path -LiteralPath $subDir) {
+                    $logDirs.Add($subDir)
+                }
+                else {
+                    Write-Warning (
+                        "Log directory '$subDir' not found under fallback root '$logRoot'. " +
+                        "The site may log to a custom folder; install WebAdministration, or pass -Path to the site's log directory " +
+                        "(IIS Manager -> Site -> Logging -> Directory)."
+                    )
+                    return
+                }
             }
             else {
-                Write-Warning "Log directory '$subDir' not found. Verify the site ID and that W3C logging is enabled for this site."
-                return
-            }
-        }
-        else {
-            # All sites - enumerate W3SVC* subfolders
-            $found = @(Get-ChildItem -LiteralPath $logRoot -Directory -ErrorAction SilentlyContinue |
-                       Where-Object { $_.Name -match '^W3SVC\d+$' })
+                $found = @(Get-ChildItem -LiteralPath $logRoot -Directory -ErrorAction SilentlyContinue |
+                           Where-Object { $_.Name -match '^W3SVC\d+$' })
 
-            if (-not $found) {
-                Write-Warning "No W3SVC* log directories found under '$logRoot'. Verify IIS W3C logging is enabled."
-                return
-            }
+                if (-not $found) {
+                    Write-Warning (
+                        "No W3SVC* site folders under '$logRoot' and per-site IIS discovery returned nothing. " +
+                        "Confirm W3C logging is enabled, or pass -Path to your LogFiles folder or W3SVCn directory."
+                    )
+                    return
+                }
 
-            $found | ForEach-Object { $logDirs.Add($_.FullName) }
+                $found | ForEach-Object { $logDirs.Add($_.FullName) }
+            }
         }
     }
 
@@ -314,7 +373,12 @@ function Get-IISW3CLog {
     }
 
     if ($logFiles.Count -eq 0) {
-        Write-Warning "No W3C log files found for the window $StartTime to $EndTime."
+        $dirList = ($logDirs | ForEach-Object { "`n  - $_" }) -join ''
+        Write-Warning (
+            "No W3C log files matched the time window $StartTime to $EndTime (local). Scanned:$dirList`n" +
+            "Try -LastHours with a larger value, pass -Path to the folder containing u_ex*.log files, " +
+            "or confirm site logging paths under IIS Manager -> Sites -> Logging."
+        )
         return
     }
 

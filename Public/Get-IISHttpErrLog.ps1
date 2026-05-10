@@ -37,7 +37,11 @@ function Get-IISHttpErrLog {
         Parses HTTPERR log files and returns entries or a summary for a given time window.
 
     .DESCRIPTION
-        Reads HTTP.sys error logs from %SystemRoot%\System32\LogFiles\HTTPERR.
+        Reads HTTP.sys error logs. The default folder is
+        %SystemRoot%\System32\LogFiles\HTTPERR. If administrators relocate logs via
+        HKLM\SYSTEM\CurrentControlSet\Services\HTTP\Parameters **ErrorLoggingDir**
+        (parent folder; HTTP.sys creates an **HTTPERR** subfolder), that location is
+        discovered automatically. Override with **-Path** if logs live elsewhere.
 
         HTTPERR logs capture requests that HTTP.sys rejected before they reached IIS or any
         application pool. Critically, these errors do NOT appear in W3C access logs, making
@@ -67,8 +71,9 @@ function Get-IISHttpErrLog {
         typing dates on servers with unfamiliar locale settings.
 
     .PARAMETER Path
-        Override the HTTPERR log directory.
-        Default: %SystemRoot%\System32\LogFiles\HTTPERR
+        Folder containing httperr*.log files (not the parent defined by ErrorLoggingDir
+        unless your logs were moved there without the HTTPERR subfolder). When omitted,
+        the cmdlet tries the default path and the registry-based location.
 
     .PARAMETER Reason
         Return only entries matching this s-reason value, e.g. Timer_AppPool.
@@ -132,8 +137,9 @@ function Get-IISHttpErrLog {
 
         [Parameter()]
         [ValidateScript({
-            if (-not (Test-Path -LiteralPath $_ -PathType Container)) {
-                throw "Path '$_' does not exist or is not a directory."
+            $expanded = Expand-IISDiagnosticsLogPath -Path $_
+            if (-not (Test-Path -LiteralPath $expanded -PathType Container)) {
+                throw "Path '$expanded' does not exist or is not a directory."
             }
             $true
         })]
@@ -166,23 +172,36 @@ function Get-IISHttpErrLog {
     # -----------------------------------------------------------------------
     # Resolve log directory and validate time window
     # -----------------------------------------------------------------------
-    $logDir = if ($PSBoundParameters.ContainsKey('Path')) {
-        $Path
-    } else {
-        Join-Path $env:SystemRoot 'System32\LogFiles\HTTPERR'
+    if ($PSBoundParameters.ContainsKey('Path')) {
+        $logDir = Expand-IISDiagnosticsLogPath -Path $Path
     }
+    else {
+        $candidates = @(Get-HttpErrLogDirectoryCandidates)
+        $logDir = $null
+        foreach ($c in $candidates) {
+            if (Test-Path -LiteralPath $c) {
+                $logDir = $c
+                Write-Verbose "Using HTTPERR directory: $logDir"
+                break
+            }
+            Write-Verbose "HTTPERR candidate not found (skipped): $c"
+        }
 
-    if (-not (Test-Path -LiteralPath $logDir)) {
-        $PSCmdlet.ThrowTerminatingError(
-            [System.Management.Automation.ErrorRecord]::new(
-                [System.IO.DirectoryNotFoundException]::new(
-                    "HTTPERR log directory not found at '$logDir'. " +
-                    "Verify IIS is installed and HTTP.sys logging is enabled (netsh http show servicestate)."),
-                'HttpErrDirNotFound',
-                [System.Management.Automation.ErrorCategory]::ObjectNotFound,
-                $logDir
+        if (-not $logDir) {
+            $tried = $candidates -join "`n  "
+            $PSCmdlet.ThrowTerminatingError(
+                [System.Management.Automation.ErrorRecord]::new(
+                    [System.IO.DirectoryNotFoundException]::new(
+                        "HTTPERR log directory not found. Tried:`n  $tried`n" +
+                        "Custom locations: set registry HKLM\SYSTEM\CurrentControlSet\Services\HTTP\Parameters " +
+                        "ErrorLoggingDir to the parent folder (HTTP.sys creates an HTTPERR subfolder), restart HTTP " +
+                        "(net stop http / net start http), or pass -Path to the folder that contains httperr*.log files."),
+                    'HttpErrDirNotFound',
+                    [System.Management.Automation.ErrorCategory]::ObjectNotFound,
+                    $candidates
+                )
             )
-        )
+        }
     }
 
     if ($StartTime -ge $EndTime) {
@@ -195,16 +214,20 @@ function Get-IISHttpErrLog {
 
     # -----------------------------------------------------------------------
     # Discover log files
-    # Log files rotate on size (default 1 MB). A single file may span many
-    # days, so we use LastWriteTime only as a cheap pre-filter to skip files
-    # that were last written before the window started.
+    # Include all httperr*.log files in the directory and filter by line timestamps below.
+    # (Filtering files by LastWriteTime incorrectly skipped logs for historical windows
+    # when files were not modified recently.)
     # -----------------------------------------------------------------------
-    $logFiles = Get-ChildItem -LiteralPath $logDir -Filter 'httperr*.log' -ErrorAction SilentlyContinue |
-        Where-Object { $_.LastWriteTime.ToUniversalTime() -ge $startUtc } |
-        Sort-Object LastWriteTime
+    $logFiles = @(Get-ChildItem -LiteralPath $logDir -Filter 'httperr*.log' -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime)
 
     if (-not $logFiles) {
-        Write-Warning "No HTTPERR log files found in '$logDir' for the window $StartTime to $EndTime."
+        Write-Warning (
+            "No httperr*.log files in '$logDir'. " +
+            "Confirm HTTP.sys error logging is enabled and this path is correct (see -Path). " +
+            "Registry parent: HKLM\SYSTEM\CurrentControlSet\Services\HTTP\Parameters\ErrorLoggingDir " +
+            "(actual logs are usually in an HTTPERR subfolder under that parent)."
+        )
         return
     }
 
@@ -214,6 +237,8 @@ function Get-IISHttpErrLog {
     $accumulated = if ($Summarise) {
         [System.Collections.Generic.List[psobject]]::new()
     } else { $null }
+
+    $entriesInWindow = 0
 
     # -----------------------------------------------------------------------
     # Parse each log file
@@ -322,6 +347,8 @@ function Get-IISHttpErrLog {
                     SourceFile        = $file.Name
                 }
 
+                $entriesInWindow++
+
                 if ($Summarise) {
                     $accumulated.Add($entry)
                 } else {
@@ -338,10 +365,20 @@ function Get-IISHttpErrLog {
         }
     }
 
+    if ($entriesInWindow -eq 0 -and $logFiles.Count -gt 0) {
+        Write-Warning (
+            "No HTTPERR entries fell between $StartTime and $EndTime (local) after parsing $($logFiles.Count) file(s) under '$logDir'. " +
+            "Try a wider -LastHours window, confirm -Path points at the folder containing httperr*.log, " +
+            "or verify the server clock (log lines are UTC; the window uses local time converted to UTC)."
+        )
+    }
+
     # -----------------------------------------------------------------------
     # Build summary if requested
     # -----------------------------------------------------------------------
-    if (-not $Summarise) { return }
+    if (-not $Summarise) {
+        return
+    }
 
     $total = $accumulated.Count
 

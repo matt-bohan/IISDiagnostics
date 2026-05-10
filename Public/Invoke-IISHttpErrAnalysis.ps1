@@ -469,27 +469,34 @@ function Invoke-IISHttpErrAnalysis {
         $isConcentrated = $topIpCount -ge 10 -and $topIpPct -ge 50
         $severity       = if ($isConcentrated -or $malformedCount -ge 50) { 'Warning' } else { 'Info' }
 
+        # PS 5.1: do not use '-Detail (if (...) { })' - parses as command mode and errors with "if is not recognized".
+        $malformedDetail = if ($isConcentrated) {
+            "$malformedCount malformed/disallowed request(s). $topIpCount ($($topIpPct)%) from a single IP ($($topSourceIp.Name))."
+        }
+        else {
+            "$malformedCount malformed/disallowed request(s) distributed across multiple sources."
+        }
+
+        $malformedActions = if ($isConcentrated) {
+            @(
+                "Investigate traffic from $($topSourceIp.Name) - verify it is a legitimate system"
+                'Consider IP-level filtering if confirmed automated scanning'
+            )
+        }
+        else {
+            @('No immediate action required - monitor for volume increases')
+        }
+
         Add-Finding -Severity $severity `
             -Category 'MalformedRequests' `
             -Title 'Malformed or disallowed requests detected' `
-            -Detail (if ($isConcentrated) {
-                "$malformedCount malformed/disallowed request(s). $topIpCount ($($topIpPct)%) from a single IP ($($topSourceIp.Name))."
-            } else {
-                "$malformedCount malformed/disallowed request(s) distributed across multiple sources."
-            }) `
+            -Detail $malformedDetail `
             -Evidence (
                 "$malformedCount entries. Breakdown: " +
                 (($malformedReasons | Where-Object { (CountOf $_) -gt 0 } |
                     ForEach-Object { "$_=$(CountOf $_)" }) -join ', ')
             ) `
-            -RecommendedActions $(if ($isConcentrated) {
-                @(
-                    "Investigate traffic from $($topSourceIp.Name) - verify it is a legitimate system"
-                    'Consider IP-level filtering if confirmed automated scanning'
-                )
-            } else {
-                @('No immediate action required - monitor for volume increases')
-            })
+            -RecommendedActions $malformedActions
     }
 
     # ------------------------------------------------------------------
