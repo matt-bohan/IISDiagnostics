@@ -1,0 +1,738 @@
+{
+  "http": {
+    "400": {
+      "title": "Bad Request",
+      "description": "The server cannot process the request because the client sent malformed syntax, invalid headers, oversized fields, or content that violates rules.",
+      "serverAdminConcern": "Low — Usually traceable to a single bad client, proxy, or integration unless spikes indicate abuse.",
+      "applicationSupportConcern": "Medium — Often indicates invalid API usage, serialization bugs, or schema mismatches in app code.",
+      "likelyCauses": [
+        "Malformed HTTP request line, headers, or cookie values",
+        "Body encoding or JSON/XML that fails parsing or validation",
+        "URL or header length limits exceeded",
+        "WAF or reverse proxy rewriting requests incorrectly"
+      ],
+      "checks": [
+        "Capture the raw request (Fiddler, browser dev tools, Postman) and compare with API documentation",
+        "Review application validation and model binding errors in logs",
+        "Check IIS Failed Request Tracing or ASP.NET detailed errors for the failing module",
+        "Verify load balancer or firewall is not stripping or corrupting headers"
+      ],
+      "seeAlso": [
+        "https://learn.microsoft.com/en-us/troubleshoot/developer/webapps/iis/www-administration-management/http-status-code"
+      ]
+    },
+    "401": {
+      "title": "Unauthorized",
+      "description": "Authentication is required or credentials were rejected before the request could be authorized.",
+      "serverAdminConcern": "Medium — Often IIS authentication configuration, certificates, or domain/Kerberos issues.",
+      "applicationSupportConcern": "Medium — App-level login, tokens, API keys, or identity provider integration problems.",
+      "likelyCauses": [
+        "Wrong or expired credentials",
+        "Anonymous authentication disabled when clients expect it",
+        "Kerberos SPN or delegation misconfiguration",
+        "OAuth/OpenID token validation failures"
+      ],
+      "checks": [
+        "Confirm which authentication methods are enabled on the site and app pool identity",
+        "Review IIS logs fields c-ip, cs-username, sc-substatus for specific 401.x meaning",
+        "Test with a known-good account and compare with failing users",
+        "Validate clocks (Kerberos), SSL certificates, and trust between servers"
+      ],
+      "seeAlso": [
+        "https://learn.microsoft.com/en-us/troubleshoot/developer/webapps/iis/www-administration-management/http-status-code"
+      ]
+    },
+    "403": {
+      "title": "Forbidden",
+      "description": "The server understood the request but refuses to fulfill it; credentials may be valid but authorization or policy denies access.",
+      "serverAdminConcern": "Medium — NTFS ACLs, IP restrictions, SSL policies, or site bindings.",
+      "applicationSupportConcern": "Medium — Role-based rules, URL authorization, or business logic denying access.",
+      "likelyCauses": [
+        "Insufficient NTFS permissions on content or scripts",
+        "URL Authorization rules denying users or verbs",
+        "IP/domain restrictions or geo blocking",
+        "Client certificate or SSL requirements not met"
+      ],
+      "checks": [
+        "Compare app pool identity vs folder ACLs on physical paths",
+        "Inspect URL Authorization and Request Filtering rules",
+        "Check IP restriction modules and reverse proxy forwarded headers",
+        "Verify SSL bindings and whether anonymous vs authenticated users are expected"
+      ],
+      "seeAlso": [
+        "https://learn.microsoft.com/en-us/troubleshoot/developer/webapps/iis/www-administration-management/http-status-code"
+      ]
+    },
+    "404": {
+      "title": "Not Found",
+      "description": "No resource matched the requested URL, or an IIS rule hid or blocked the mapping before your application ran.",
+      "serverAdminConcern": "Low — Unless widespread, often content deployment or virtual directory issues.",
+      "applicationSupportConcern": "Medium — Wrong routes, missing static files, or API versioning mismatches.",
+      "likelyCauses": [
+        "Typo in URL, missing file after deployment",
+        "Incorrect application path or virtual directory",
+        "Handler mapping or rewrite rule sending traffic elsewhere",
+        "ASP.NET routing not registering expected endpoints"
+      ],
+      "checks": [
+        "Confirm physical file exists under the site root the app pool can read",
+        "Review Failed Request Tracing and Failed Request logs for rewrite outcomes",
+        "Check web.config for handlers, default documents, and aspNetCore hosting paths",
+        "For SPA apps, ensure fallback routing or static file middleware is configured"
+      ],
+      "seeAlso": [
+        "https://learn.microsoft.com/en-us/troubleshoot/developer/webapps/iis/www-administration-management/http-status-code"
+      ]
+    },
+    "408": {
+      "title": "Request Timeout",
+      "description": "The server gave up waiting for the complete request from the client within the allowed time.",
+      "serverAdminConcern": "Low to Medium — May indicate slow networks, large uploads, or aggressive timeouts.",
+      "applicationSupportConcern": "Low — Unless app holds connections open during long server-side work.",
+      "likelyCauses": [
+        "Slow or stalled uploads",
+        "Client disconnects mid-request",
+        "Timeouts set too low on IIS, reverse proxy, or firewall"
+      ],
+      "checks": [
+        "Increase request timeouts where large uploads are expected",
+        "Inspect intermediate proxies (ARR, nginx, Application Gateway) timeout settings",
+        "Correlate with client-side logs and network captures"
+      ],
+      "seeAlso": []
+    },
+    "413": {
+      "title": "Payload Too Large",
+      "description": "The request body exceeds limits configured on IIS, ASP.NET, or an upstream proxy.",
+      "serverAdminConcern": "Medium — Requires raising limits consistently across IIS and proxies.",
+      "applicationSupportConcern": "Medium — Design uploads to chunk or stream within limits.",
+      "likelyCauses": [
+        "maxAllowedContentLength or requestFiltering limits",
+        "ASP.NET Core Kestrel/IIS max body limits",
+        "Reverse proxy body size caps"
+      ],
+      "checks": [
+        "Raise maxAllowedContentLength in web.config requestFiltering",
+        "Adjust ASP.NET Core server limits and multipart boundaries",
+        "Align Azure Front Door, nginx, or ARR upload limits with IIS"
+      ],
+      "seeAlso": []
+    },
+    "429": {
+      "title": "Too Many Requests",
+      "description": "The client exceeded a configured rate limit or throttling policy.",
+      "serverAdminConcern": "Medium — Capacity, DDoS mitigation, or reverse proxy rate limits.",
+      "applicationSupportConcern": "Medium — Client retry storms or missing backoff.",
+      "likelyCauses": [
+        "Dynamic IP rate limiting",
+        "API subscription quotas",
+        "Aggressive polling from integrations"
+      ],
+      "checks": [
+        "Identify the component emitting 429 (app vs gateway)",
+        "Review Retry-After headers and client backoff logic",
+        "Tune limits or scale out if legitimate traffic is throttled"
+      ],
+      "seeAlso": []
+    },
+    "500": {
+      "title": "Internal Server Error",
+      "description": "An unexpected failure occurred while processing the request; use IIS substatus (500.x) when logged to pinpoint modules or configuration.",
+      "serverAdminConcern": "High — Misconfiguration, failing modules, or unstable worker processes.",
+      "applicationSupportConcern": "High — Unhandled exceptions, dependency outages, or corrupt application state.",
+      "likelyCauses": [
+        "Unhandled exceptions in managed or native code",
+        "web.config errors (see 500.19)",
+        "ASP.NET Core startup failures (see 500.30+)",
+        "Out of memory or access violations in worker process"
+      ],
+      "checks": [
+        "Open Event Viewer Application and System logs for WAS and ASP.NET Core entries",
+        "Enable stdout logging for ASP.NET Core under logs folder",
+        "Temporarily enable detailed errors only in controlled environments",
+        "Collect memory dumps if the worker process recycles frequently"
+      ],
+      "seeAlso": [
+        "https://learn.microsoft.com/en-us/troubleshoot/developer/webapps/iis/www-administration-management/http-status-code"
+      ]
+    },
+    "501": {
+      "title": "Not Implemented",
+      "description": "The server does not support the functionality required to fulfill the request (for example an unsupported HTTP method).",
+      "serverAdminConcern": "Low — Rare on IIS unless handlers misconfigured.",
+      "applicationSupportConcern": "Medium — Client calling wrong verb or endpoint.",
+      "likelyCauses": [
+        "DELETE/PUT blocked by handler or WebDAV settings",
+        "Missing extension mapping"
+      ],
+      "checks": [
+        "Verify allowed verbs on handler mappings",
+        "Confirm API expects the HTTP method used by the client"
+      ],
+      "seeAlso": []
+    },
+    "502": {
+      "title": "Bad Gateway",
+      "description": "IIS or a reverse proxy acting as gateway received an invalid response from an upstream server.",
+      "serverAdminConcern": "High — ARR, proxy, or backend connectivity issues.",
+      "applicationSupportConcern": "Medium — Backend API unstable or returning malformed responses.",
+      "likelyCauses": [
+        "Upstream application offline or TCP reset",
+        "SSL handshake failure between proxy and origin",
+        "ARR health probe marking server unhealthy",
+        "CGI/FastCGI timeout"
+      ],
+      "checks": [
+        "Verify upstream URL, ports, and certificates from the proxy machine",
+        "Review ARR proxy logs and WinHTTP traces",
+        "Test origin directly bypassing the gateway",
+        "Check firewall rules between tier hosts"
+      ],
+      "seeAlso": [
+        "https://learn.microsoft.com/en-us/troubleshoot/developer/webapps/iis/www-administration-management/http-status-code"
+      ]
+    },
+    "503": {
+      "title": "Service Unavailable",
+      "description": "The server cannot handle the request right now—often application pool stopped, recycling, queue limits, or infrastructure saturation.",
+      "serverAdminConcern": "High — Availability and capacity of IIS app pools and dependent services.",
+      "applicationSupportConcern": "Medium to High — Startup failures, deadlock, or dependency outages causing pool stops.",
+      "likelyCauses": [
+        "Application pool stopped or rapid recycling",
+        "HTTP.sys queue or ASP.NET queue exhaustion",
+        "Planned maintenance with http.sys reservation",
+        "ARR routing with no healthy servers"
+      ],
+      "checks": [
+        "Check application pool state and rapid-fail protection settings",
+        "Review HTTPERR logs under System32\\LogFiles\\HTTPERR",
+        "Inspect CPU/memory limits on app pools",
+        "Validate HTTP.sys URL reservations if multiple sites share bindings",
+        "Look at substatus (503.2, 503.3, etc.) in IIS logs when present"
+      ],
+      "seeAlso": [
+        "https://learn.microsoft.com/en-us/troubleshoot/developer/webapps/iis/www-administration-management/http-status-code"
+      ]
+    },
+    "504": {
+      "title": "Gateway Timeout",
+      "description": "A gateway or proxy did not receive a timely response from an upstream server.",
+      "serverAdminConcern": "High — Proxy timeouts shorter than backend processing time.",
+      "applicationSupportConcern": "High — Slow queries, remote calls, or missing async timeouts.",
+      "likelyCauses": [
+        "Database or external API latency spikes",
+        "Proxy idle/read timeout shorter than backend SLA",
+        "Thread pool starvation"
+      ],
+      "checks": [
+        "Increase gateway timeout or optimize backend latency",
+        "Profile slow dependencies with APM or traces",
+        "Align ARR/WebSocket/proxy timeouts with realistic worst-case duration"
+      ],
+      "seeAlso": []
+    }
+  },
+  "substatus": {
+    "401.1": {
+      "title": "401.1 - Logon failed",
+      "description": "IIS rejected the supplied credentials during authentication before authorization ran.",
+      "serverAdminConcern": "Medium — Authentication scheme or provider misconfiguration.",
+      "applicationSupportConcern": "Medium — Wrong password, locked account, or wrong identity provider.",
+      "likelyCauses": [
+        "Invalid username or password for basic or Windows auth",
+        "Anonymous authentication disabled when expected",
+        "Domain trust or DC connectivity problems"
+      ],
+      "checks": [
+        "Verify authentication providers enabled on the site",
+        "Test interactive logon or LDAP bind outside IIS",
+        "Compare failing accounts against successful ones"
+      ],
+      "seeAlso": []
+    },
+    "401.2": {
+      "title": "401.2 - Logon failed due to server configuration",
+      "description": "Credentials might be fine but IIS authentication configuration prevents logon (scheme mismatch).",
+      "serverAdminConcern": "Medium — IIS authentication settings vs client capabilities.",
+      "applicationSupportConcern": "Low — Client not sending expected scheme (Negotiate vs NTLM vs Basic).",
+      "likelyCauses": [
+        "Client offers only NTLM but site requires Negotiate",
+        "Integrated Windows auth disabled",
+        "HTTPS vs HTTP auth requirements"
+      ],
+      "checks": [
+        "Align authentication modes between IIS, browsers, and reverse proxies",
+        "Ensure kernel-mode vs managed authentication settings match expectations",
+        "Review AuthPersistSingleRequestPerSession-related settings if cookies involved"
+      ],
+      "seeAlso": []
+    },
+    "401.3": {
+      "title": "401.3 - Unauthorized due to ACL on resource",
+      "description": "Authentication succeeded at IIS but NTFS ACLs deny the authenticated principal.",
+      "serverAdminConcern": "High — File system permissions on site content.",
+      "applicationSupportConcern": "Low — Unless impersonation changes effective user.",
+      "likelyCauses": [
+        "App pool identity lacks read/execute on physical path",
+        "Explicit deny ACE on folders",
+        "Files deployed without inherited permissions"
+      ],
+      "checks": [
+        "Grant app pool identity read and execute on site root and scripts",
+        "Verify impersonation settings if accessing remote UNC shares",
+        "Use icacls or Effective Access tab for problematic accounts"
+      ],
+      "seeAlso": []
+    },
+    "401.16": {
+      "title": "401.16 - Unauthorized (MSDN unspecified)",
+      "description": "Often logged when authorization middleware rejects access before the site serves content (specific products map extra meanings—check product docs).",
+      "serverAdminConcern": "Medium — Depends on modules installed (URL auth, ARR, etc.).",
+      "applicationSupportConcern": "Medium — Match logs to module pipeline order.",
+      "likelyCauses": [
+        "Custom authorization module denying access",
+        "Third-party security modules",
+        "Mixed anonymous and authenticated areas"
+      ],
+      "checks": [
+        "Enable Failed Request Tracing to see which module returned 401",
+        "Review ordered modules in IIS Manager",
+        "Correlate with application authorization policies"
+      ],
+      "seeAlso": []
+    },
+    "403.4": {
+      "title": "403.4 - SSL required",
+      "description": "The resource must be accessed over HTTPS but the request used HTTP.",
+      "serverAdminConcern": "Medium — Require SSL flag on site/folder and binding coverage.",
+      "applicationSupportConcern": "Low — Hard-coded http links or HSTS misconfiguration.",
+      "likelyCauses": [
+        "Require SSL checkbox enabled without redirect rule",
+        "Clients hitting http:// directly",
+        "Health probes using wrong scheme"
+      ],
+      "checks": [
+        "Add HTTPS binding and valid certificate",
+        "Implement HTTP to HTTPS redirect at IIS or reverse proxy",
+        "Ensure monitoring uses https URLs"
+      ],
+      "seeAlso": []
+    },
+    "403.14": {
+      "title": "403.14 - Directory listing denied",
+      "description": "No default document exists and directory browsing is disabled.",
+      "serverAdminConcern": "Low — Expected secure default.",
+      "applicationSupportConcern": "Medium — Missing default file or SPA fallback.",
+      "likelyCauses": [
+        "No index.html/default.aspx at folder root",
+        "SPA deep links without rewrite to index",
+        "Deployment omitted startup page"
+      ],
+      "checks": [
+        "Add default document or enable directory browsing only if intentional",
+        "Configure URL rewrite for SPA frameworks",
+        "Verify publish profile includes root files"
+      ],
+      "seeAlso": []
+    },
+    "404.3": {
+      "title": "404.3 - MIME map policy",
+      "description": "The file extension is blocked because MIME types or handler mappings disallow it.",
+      "serverAdminConcern": "Medium — Request filtering staticFile deny extensions.",
+      "applicationSupportConcern": "Low — Wrong file extension chosen.",
+      "likelyCauses": [
+        "Extension not listed in MIME types",
+        "Handler mapping missing for extension",
+        "requestFiltering fileExtensions deny entry"
+      ],
+      "checks": [
+        "Add MIME type or handler for the extension",
+        "Remove unintended deny rules from requestFiltering",
+        "Confirm static content feature installed"
+      ],
+      "seeAlso": []
+    },
+    "404.13": {
+      "title": "404.13 - Content length too large",
+      "description": "The request body exceeds configured limits before reaching the application.",
+      "serverAdminConcern": "Medium — Raise IIS and proxy limits consistently.",
+      "applicationSupportConcern": "Medium — Chunk uploads or compress payloads.",
+      "likelyCauses": [
+        "maxAllowedContentLength too low",
+        "Reverse proxy body limits"
+      ],
+      "checks": [
+        "Increase limits in web.config requestFiltering",
+        "Adjust ASP.NET Core server limits",
+        "Verify CDN or WAF upload caps"
+      ],
+      "seeAlso": []
+    },
+    "500.0": {
+      "title": "500.0 - Module or ISAPI error",
+      "description": "An ISAPI extension, CGI, FastCGI module, or HTTP module threw an unhandled error.",
+      "serverAdminConcern": "Medium — Faulty native modules or misconfigured handlers.",
+      "applicationSupportConcern": "High — Managed exceptions bubbling without handling.",
+      "likelyCauses": [
+        "Unhandled exception in ASP.NET pipeline",
+        "PHP/CGI executable crashed",
+        "Third-party IIS module fault"
+      ],
+      "checks": [
+        "Review Windows Event Log for WAS warnings",
+        "Enable Failed Request Tracing with verbose errors in controlled environments",
+        "Upgrade faulty modules or capture crash dumps"
+      ],
+      "seeAlso": []
+    },
+    "500.11": {
+      "title": "500.11 - Application shutting down on the web server",
+      "description": "ASP.NET detected the app domain is unloading—often due to configuration change or fatal error.",
+      "serverAdminConcern": "Medium — Frequent app domain restarts hurt availability.",
+      "applicationSupportConcern": "High — Startup exception or file change churn.",
+      "likelyCauses": [
+        "web.config touch triggering recycle",
+        "Unhandled exception on Application_End",
+        "Bin folder updates during peak traffic"
+      ],
+      "checks": [
+        "Review ASP.NET Health Monitoring or ETW traces",
+        "Stabilize deployments to reduce bin churn",
+        "Inspect antivirus locking DLLs in bin"
+      ],
+      "seeAlso": []
+    },
+    "500.12": {
+      "title": "500.12 - Application is busy restarting",
+      "description": "Requests arrived while the application was restarting after a configuration or file change.",
+      "serverAdminConcern": "Low — Transient during deployments.",
+      "applicationSupportConcern": "Medium — Excessive restarts due to file watchers.",
+      "likelyCauses": [
+        "Simultaneous deployment and traffic",
+        "Auto-restart loops from bad configuration"
+      ],
+      "checks": [
+        "Use drain-stop or maintenance pages during deploys",
+        "Reduce accidental writes under application folders"
+      ],
+      "seeAlso": []
+    },
+    "500.13": {
+      "title": "500.13 - Web server is too busy",
+      "description": "ASP.NET rejected work because internal queues were full—severe load or deadlock.",
+      "serverAdminConcern": "High — Capacity and queue tuning.",
+      "applicationSupportConcern": "High — Thread pool starvation or blocking calls.",
+      "likelyCauses": [
+        "Too few worker threads vs synchronous IO",
+        "Database storms",
+        "Deadlocks in application code"
+      ],
+      "checks": [
+        "Scale out or increase resources",
+        "Convert blocking calls to async",
+        "Tune processModel and queue limits carefully with measurement"
+      ],
+      "seeAlso": []
+    },
+    "500.19": {
+      "title": "500.19 - Internal Server Error - Configuration invalid",
+      "description": "IIS failed to read configuration—typically malformed web.config, locked sections, or missing modules.",
+      "serverAdminConcern": "High — Deployment or permission issue preventing config load.",
+      "applicationSupportConcern": "Medium — Invalid XML or unsupported settings for target framework.",
+      "likelyCauses": [
+        "Malformed XML or duplicate sections",
+        "Missing ASP.NET Core Hosting Bundle / module",
+        "Unlock required sections at machine level",
+        "Cannot read web.config due to ACL"
+      ],
+      "checks": [
+        "Validate web.config against schema and framework version",
+        "Install correct Hosting Bundle version matching runtime",
+        "Run appcmd unlock config or fix ACLs on web.config",
+        "Read error detail line/column shown in browser when detailed errors enabled"
+      ],
+      "seeAlso": [
+        "https://learn.microsoft.com/en-us/troubleshoot/developer/webapps/iis/www-administration-management/http-status-code"
+      ]
+    },
+    "500.21": {
+      "title": "500.21 - Internal Server Error - Handler mismatch",
+      "description": "A module failed to execute—often handler order issues or bitness mismatch.",
+      "serverAdminConcern": "Medium — Handler mappings or modules corrupted.",
+      "applicationSupportConcern": "Medium — Wrong runtime target.",
+      "likelyCauses": [
+        "Managed handler not registered",
+        "32-bit vs 64-bit module mismatch"
+      ],
+      "checks": [
+        "Reinstall ASP.NET via aspnet_regiis if classic ASP.NET",
+        "Verify Enable 32-Bit Applications matches binaries",
+        "Repair IIS Express or hosting bundle"
+      ],
+      "seeAlso": []
+    },
+    "500.22": {
+      "title": "500.22 - ANCM duplicate aspNetCore section",
+      "description": "ASP.NET Core ANCM found duplicate aspNetCore configuration sections.",
+      "serverAdminConcern": "Low — web.config editing mistake.",
+      "applicationSupportConcern": "Low — Merge duplicate entries from transforms.",
+      "likelyCauses": [
+        "Duplicate <aspNetCore> elements after publish merges",
+        "Nested web.config conflicts"
+      ],
+      "checks": [
+        "Search all web.config files for aspNetCore duplicates",
+        "Clean publish output and redeploy"
+      ],
+      "seeAlso": []
+    },
+    "500.23": {
+      "title": "500.23 - ANCM app offline",
+      "description": "ANCM detected app_offline.htm and stopped serving the application.",
+      "serverAdminConcern": "Low — Deployment hygiene.",
+      "applicationSupportConcern": "Low — Leftover maintenance file.",
+      "likelyCauses": [
+        "app_offline.htm present in site root",
+        "Automated deploy script failed to remove offline page"
+      ],
+      "checks": [
+        "Remove app_offline.htm after maintenance",
+        "Automate cleanup in deployment pipeline"
+      ],
+      "seeAlso": []
+    },
+    "500.30": {
+      "title": "500.30 - In-process start failure",
+      "description": "ASP.NET Core Module (ANCM) could not start the app when using the in-process hosting model.",
+      "serverAdminConcern": "Medium — Runtime, permissions, or bitness on the server.",
+      "applicationSupportConcern": "High — Startup exceptions, missing dependencies, or wrong environment.",
+      "likelyCauses": [
+        "Unhandled exception in Program.Main / Startup",
+        "Missing or mismatched .NET runtime",
+        "Cannot load native dependencies or certificates",
+        "Incorrect ASPNETCORE_ENVIRONMENT expectations"
+      ],
+      "checks": [
+        "Enable stdout logging in web.config aspNetCore stdoutLogEnabled true",
+        "Review Application Event Log for ANCM entries with HRESULT",
+        "Match installed Hosting Bundle with app's target framework",
+        "Run dotnet your.dll from the publish folder under the app pool identity",
+        "Verify working directory and content root paths"
+      ],
+      "seeAlso": [
+        "https://learn.microsoft.com/en-us/troubleshoot/developer/webapps/iis/www-administration-management/http-status-code"
+      ]
+    },
+    "500.31": {
+      "title": "500.31 - Failed to load ASP.NET Core runtime",
+      "description": "ANCM could not locate or load the ASP.NET Core shared runtime or app assembly.",
+      "serverAdminConcern": "High — Hosting Bundle incomplete or wrong architecture.",
+      "applicationSupportConcern": "Medium — Self-contained vs framework-dependent mismatch.",
+      "likelyCauses": [
+        "Framework-dependent publish without runtime installed",
+        "Wrong processorArchitecture",
+        "Corrupted dotnet installation"
+      ],
+      "checks": [
+        "dotnet --list-runtimes on the server",
+        "Install matching ASP.NET Core Hosting Bundle",
+        "Consider self-contained publish if servers cannot be patched quickly"
+      ],
+      "seeAlso": []
+    },
+    "500.32": {
+      "title": "500.32 - Failed to load aspnetcorev2_inprocess.dll",
+      "description": "The native ANCM in-process shim failed to load—often missing hosting bundle files.",
+      "serverAdminConcern": "High — Repair Hosting Bundle installation.",
+      "applicationSupportConcern": "Low — Unless wrong package deployed.",
+      "likelyCauses": [
+        "Incomplete install",
+        "Blocked antivirus removal of DLL",
+        "Wrong bitness app pool"
+      ],
+      "checks": [
+        "Reinstall latest Hosting Bundle",
+        "Verify aspnetcorev2.dll exists under Program Files\\IIS\\Asp.Net Core Module\\V2",
+        "Match app pool 32-bit flag with installation"
+      ],
+      "seeAlso": []
+    },
+    "500.33": {
+      "title": "500.33 - In-process ANCM wrong bitness",
+      "description": "The worker process architecture does not match the published application binaries.",
+      "serverAdminConcern": "Low — Toggle Enable 32-Bit Applications on app pool.",
+      "applicationSupportConcern": "Medium — Publish for correct RID.",
+      "likelyCauses": [
+        "32-bit pool with 64-bit only build",
+        "Arm vs x64 mismatch on specialized hosts"
+      ],
+      "checks": [
+        "Align app pool bitness with publish output",
+        "Republish with correct runtime identifier"
+      ],
+      "seeAlso": []
+    },
+    "500.34": {
+      "title": "500.34 - In-process ANCM app startup failure",
+      "description": "Startup reached Main but hosting shut down due to startup filters or host builder errors.",
+      "serverAdminConcern": "Low — Unless policy blocks Kestrel endpoints.",
+      "applicationSupportConcern": "High — Startup configuration exceptions.",
+      "likelyCauses": [
+        "Exceptions during ConfigureServices",
+        "Missing configuration keys",
+        "Certificate load failures at startup"
+      ],
+      "checks": [
+        "Enable detailed exceptions locally",
+        "Validate appsettings.* for target environment",
+        "Inspect ANCM stdout logs"
+      ],
+      "seeAlso": []
+    },
+    "500.35": {
+      "title": "500.35 - ANCM duplicate hosting models",
+      "description": "Both in-process and out-of-process hosting settings conflict.",
+      "serverAdminConcern": "Low — web.config cleanup.",
+      "applicationSupportConcern": "Low — Publish artifact merge issue.",
+      "likelyCauses": [
+        "Duplicate hostingModel attributes after transforms",
+        "Multiple web.config layers"
+      ],
+      "checks": [
+        "Ensure single aspNetCore element with one hostingModel",
+        "Review nested site web.config inheritance"
+      ],
+      "seeAlso": []
+    },
+    "500.36": {
+      "title": "500.36 - ANCM configuration mismatch",
+      "description": "Mismatch between server hosting bundle capabilities and application declared runtime.",
+      "serverAdminConcern": "Medium — Upgrade hosting bundle.",
+      "applicationSupportConcern": "Medium — Target newer runtime than deployed.",
+      "likelyCauses": [
+        "Preview runtime referenced but not installed",
+        "Roll-forward policies blocking startup"
+      ],
+      "checks": [
+        "Align TargetFramework with installed shared frameworks",
+        "Update global.json rollForward settings intentionally"
+      ],
+      "seeAlso": []
+    },
+    "500.37": {
+      "title": "500.37 - Startup exceeded time limit",
+      "description": "ANCM terminated startup because the app did not become ready in time.",
+      "serverAdminConcern": "Medium — Increase startupTimeLimit if cold start is legitimately slow.",
+      "applicationSupportConcern": "High — Slow dependency initialization.",
+      "likelyCauses": [
+        "Database migrations on startup",
+        "Large DI graphs or synchronous network calls",
+        "Deadlocks during startup"
+      ],
+      "checks": [
+        "Increase startupTimeLimit in aspNetCore settings cautiously",
+        "Profile startup with logging timestamps",
+        "Move heavy work out of synchronous startup path"
+      ],
+      "seeAlso": []
+    },
+    "500.38": {
+      "title": "500.38 - Hosting model not supported",
+      "description": "The chosen hosting model cannot run on this IIS configuration.",
+      "serverAdminConcern": "Medium — Wrong IIS modules or OS SKUs.",
+      "applicationSupportConcern": "Medium — Mixed hosting settings.",
+      "likelyCauses": [
+        "In-process requires compatible ANCM + shim",
+        "Out-of-process blocked by policy"
+      ],
+      "checks": [
+        "Switch hostingModel to match supported scenario",
+        "Upgrade IIS / Hosting Bundle"
+      ],
+      "seeAlso": []
+    },
+    "502.3": {
+      "title": "502.3 - Bad Gateway - Forward connection failure",
+      "description": "Application Request Routing or WebSocket proxy failed to connect to the defined backend server.",
+      "serverAdminConcern": "High — Network path, DNS, or backend offline.",
+      "applicationSupportConcern": "Medium — Backend refusing connections.",
+      "likelyCauses": [
+        "Backend IP/port wrong in ARR server farm",
+        "TLS mismatch or certificate name mismatch",
+        "Firewall between IIS and backend"
+      ],
+      "checks": [
+        "Test Telnet/curl from IIS box to backend URL",
+        "Verify ARR health tests and server affinity",
+        "Inspect SSL settings for server name indication"
+      ],
+      "seeAlso": []
+    },
+    "502.4": {
+      "title": "502.4 - Bad Gateway - SSL handshake failed",
+      "description": "ARR could not complete TLS with the origin server.",
+      "serverAdminConcern": "High — Certificates, protocols, or cipher mismatch.",
+      "applicationSupportConcern": "Low — Unless backend uses custom TLS.",
+      "likelyCauses": [
+        "Expired backend certificate",
+        "TLS 1.0 disabled but backend requires it",
+        "Untrusted CA on IIS machine"
+      ],
+      "checks": [
+        "Validate cert chain on IIS server using openssl or PowerShell",
+        "Align TLS registry settings between tiers",
+        "Update ARR proxy SSL flags"
+      ],
+      "seeAlso": []
+    },
+    "503.2": {
+      "title": "503.2 - Concurrent request limit exceeded",
+      "description": "siteLimits maxConnections or dynamicIdleThreshold policies rejected additional connections.",
+      "serverAdminConcern": "High — Tune IIS site limits vs capacity.",
+      "applicationSupportConcern": "Medium — Traffic spike or slow requests holding slots.",
+      "likelyCauses": [
+        "Too low connection limits on busy sites",
+        "Slow upstream causing connections to linger"
+      ],
+      "checks": [
+        "Raise limits deliberately after measuring resources",
+        "Optimize slow endpoints",
+        "Scale out with ARR load balancing"
+      ],
+      "seeAlso": []
+    },
+    "503.3": {
+      "title": "503.3 - ASP.NET Queue full",
+      "description": "Requests exceeded the ASP.NET queue depth before worker threads became available.",
+      "serverAdminConcern": "High — Thread pool and queue configuration.",
+      "applicationSupportConcern": "High — Blocking synchronous IO.",
+      "likelyCauses": [
+        "High latency SQL calls on many threads",
+        "Deadlocks",
+        "Insufficient CPU"
+      ],
+      "checks": [
+        "Profile slow queries",
+        "Convert to async",
+        "Increase servers or tune machine.config gingerly"
+      ],
+      "seeAlso": []
+    },
+    "503.4": {
+      "title": "503.4 - FastCGI queue full",
+      "description": "FastCGI processes could not dequeue requests quickly enough.",
+      "serverAdminConcern": "Medium — Increase FastCGI instance limits.",
+      "applicationSupportConcern": "Medium — PHP or FastCGI app too slow.",
+      "likelyCauses": [
+        "Too few FastCGI instances",
+        "CPU-heavy scripts"
+      ],
+      "checks": [
+        "Raise instanceMaxRequests and concurrency settings responsibly",
+        "Optimize FastCGI workload",
+        "Add caching"
+      ],
+      "seeAlso": []
+    }
+  }
+}

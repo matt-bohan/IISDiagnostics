@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Configuration>
+  <ViewDefinitions>
+    <View>
+      <Name>IISDiagnostics.StatusHelp</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.StatusHelp</TypeName>
+      </ViewSelectedBy>
+      <ListControl>
+        <ListEntries>
+          <ListEntry>
+            <ListItems>
+              <ListItem>
+                <Label>Status code</Label>
+                <PropertyName>StatusCode</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Title</Label>
+                <PropertyName>Title</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Description</Label>
+                <PropertyName>Description</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Server admin concern</Label>
+                <PropertyName>ServerAdminConcern</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Application support concern</Label>
+                <PropertyName>ApplicationSupportConcern</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Likely causes</Label>
+                <PropertyName>LikelyCausesDisplay</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>Things to check</Label>
+                <PropertyName>ChecksDisplay</PropertyName>
+              </ListItem>
+              <ListItem>
+                <Label>See also</Label>
+                <PropertyName>SeeAlsoDisplay</PropertyName>
+              </ListItem>
+            </ListItems>
+          </ListEntry>
+        </ListEntries>
+      </ListControl>
+    </View>
+    <View>
+      <Name>IISDiagnostics.StatusHelp.Table</Name>
+      <ViewSelectedBy>
+        <TypeName>IISDiagnostics.StatusHelp</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader>
+            <Label>Code</Label>
+            <Width>10</Width>
+            <Alignment>Left</Alignment>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Title</Label>
+            <Width>48</Width>
+            <Alignment>Left</Alignment>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>Server admin</Label>
+            <Width>26</Width>
+            <Alignment>Left</Alignment>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Label>App support</Label>
+            <Width>26</Width>
+            <Alignment>Left</Alignment>
+          </TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem>
+                <PropertyName>StatusCode</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>Title</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>ServerAdminConcern</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>ApplicationSupportConcern</PropertyName>
+              </TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+  </ViewDefinitions>
+</Configuration>
