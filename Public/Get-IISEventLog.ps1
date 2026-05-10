@@ -89,6 +89,9 @@ function Get-IISEventLog {
     .PARAMETER EndTime
         End of the time window (inclusive). Defaults to now.
 
+    .PARAMETER LastHours
+        Whole-hour window ending now. Prefer this over typed dates when locale formats differ.
+
     .PARAMETER AppPoolName
         Filter WAS entries to those referencing a specific application pool name.
         Matched against the extracted AppPoolName property (case-insensitive).
@@ -168,6 +171,11 @@ function Get-IISEventLog {
         [datetime]$EndTime = (Get-Date),
 
         [Parameter()]
+        [ValidateRange(1, 8760)]
+        [Alias('Hours')]
+        [int]$LastHours,
+
+        [Parameter()]
         [string]$AppPoolName,
 
         [Parameter()]
@@ -182,6 +190,14 @@ function Get-IISEventLog {
     )
 
     Assert-ElevatedSession -CmdletName $MyInvocation.MyCommand.Name
+
+    if ($PSBoundParameters.ContainsKey('LastHours')) {
+        if ($PSBoundParameters.ContainsKey('StartTime') -or $PSBoundParameters.ContainsKey('EndTime')) {
+            Write-Warning 'LastHours is set; StartTime and EndTime are ignored.'
+        }
+        $EndTime   = Get-Date
+        $StartTime = $EndTime.AddHours(-$LastHours)
+    }
 
     if ($StartTime -ge $EndTime) {
         throw "StartTime ($StartTime) must be earlier than EndTime ($EndTime)."

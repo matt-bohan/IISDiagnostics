@@ -35,6 +35,11 @@ function Invoke-IISDiagnosticSweep {
     .PARAMETER EndTime
         End of the log analysis window. Defaults to now.
 
+    .PARAMETER LastHours
+        Length of the analysis window in whole hours, ending now. Sets StartTime and
+        EndTime without typing dates (avoids locale-specific date parsing). Ignores
+        -StartTime and -EndTime when present (a warning is emitted if those were also passed).
+
     .PARAMETER SiteName
         Limit log analysis and configuration checks to one site.
 
@@ -68,6 +73,11 @@ function Invoke-IISDiagnosticSweep {
         Extended window - useful when reviewing an incident that started earlier.
 
     .EXAMPLE
+        Invoke-IISDiagnosticSweep -LastHours 96
+
+        Last four days of logs (same window for HTTPERR, W3C, and event log sections).
+
+    .EXAMPLE
         Invoke-IISDiagnosticSweep -ReportPath C:\Reports\sweep.html -OpenReport
 
         Console output plus an HTML report that opens immediately.
@@ -86,6 +96,12 @@ function Invoke-IISDiagnosticSweep {
     param(
         [Parameter()] [datetime]$StartTime  = (Get-Date).AddHours(-1),
         [Parameter()] [datetime]$EndTime    = (Get-Date),
+
+        [Parameter()]
+        [ValidateRange(1, 8760)]
+        [Alias('Hours')]
+        [int]$LastHours,
+
         [Parameter()] [string]$SiteName,
         [Parameter()] [string]$ReportPath,
         [Parameter()] [switch]$OpenReport,
@@ -95,6 +111,14 @@ function Invoke-IISDiagnosticSweep {
     )
 
     Assert-ElevatedSession -CmdletName $MyInvocation.MyCommand.Name
+
+    if ($PSBoundParameters.ContainsKey('LastHours')) {
+        if ($PSBoundParameters.ContainsKey('StartTime') -or $PSBoundParameters.ContainsKey('EndTime')) {
+            Write-Warning 'LastHours is set; StartTime and EndTime are ignored.'
+        }
+        $EndTime   = Get-Date
+        $StartTime = $EndTime.AddHours(-$LastHours)
+    }
 
     # ── Console output helpers ──────────────────────────────────────────
     $lineWidth = 68
@@ -157,7 +181,12 @@ function Invoke-IISDiagnosticSweep {
     Write-Banner -Double
     Write-Host "    IIS Diagnostic Sweep" -ForegroundColor White -NoNewline
     Write-Host "  *  $($env:COMPUTERNAME)  *  $(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')" -ForegroundColor DarkGray
-    Write-Host "    Window: $($StartTime.ToString('HH:mm')) -> $($EndTime.ToString('HH:mm'))  ($windowMins min)" -ForegroundColor DarkGray
+    $windowLabel = if (($EndTime - $StartTime).TotalHours -le 24 -and ($StartTime.Date -eq $EndTime.Date)) {
+        "$($StartTime.ToString('HH:mm')) -> $($EndTime.ToString('HH:mm'))  ($windowMins min)"
+    } else {
+        "$($StartTime.ToString('yyyy-MM-dd HH:mm')) -> $($EndTime.ToString('yyyy-MM-dd HH:mm'))  ($windowMins min)"
+    }
+    Write-Host "    Window: $windowLabel" -ForegroundColor DarkGray
     Write-Banner -Double
 
     # ══════════════════════════════════════════════════════════════════════

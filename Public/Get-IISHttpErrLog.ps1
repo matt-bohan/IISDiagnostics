@@ -62,6 +62,10 @@ function Get-IISHttpErrLog {
     .PARAMETER EndTime
         End of the time window to analyse (inclusive). Defaults to now.
 
+    .PARAMETER LastHours
+        Whole-hour window ending now (sets StartTime/EndTime internally). Use instead of
+        typing dates on servers with unfamiliar locale settings.
+
     .PARAMETER Path
         Override the HTTPERR log directory.
         Default: %SystemRoot%\System32\LogFiles\HTTPERR
@@ -122,6 +126,11 @@ function Get-IISHttpErrLog {
         [datetime]$EndTime = (Get-Date),
 
         [Parameter()]
+        [ValidateRange(1, 8760)]
+        [Alias('Hours')]
+        [int]$LastHours,
+
+        [Parameter()]
         [ValidateScript({
             if (-not (Test-Path -LiteralPath $_ -PathType Container)) {
                 throw "Path '$_' does not exist or is not a directory."
@@ -145,6 +154,14 @@ function Get-IISHttpErrLog {
     )
 
     Assert-ElevatedSession -CmdletName $MyInvocation.MyCommand.Name
+
+    if ($PSBoundParameters.ContainsKey('LastHours')) {
+        if ($PSBoundParameters.ContainsKey('StartTime') -or $PSBoundParameters.ContainsKey('EndTime')) {
+            Write-Warning 'LastHours is set; StartTime and EndTime are ignored.'
+        }
+        $EndTime   = Get-Date
+        $StartTime = $EndTime.AddHours(-$LastHours)
+    }
 
     # -----------------------------------------------------------------------
     # Resolve log directory and validate time window

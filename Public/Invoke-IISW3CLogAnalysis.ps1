@@ -43,6 +43,9 @@ function Invoke-IISW3CLogAnalysis {
     .PARAMETER EndTime
         Passed through to Get-IISW3CLog. Defaults to now.
 
+    .PARAMETER LastHours
+        Whole-hour window ending now, passed through to Get-IISW3CLog. Ignores StartTime/EndTime when set.
+
     .PARAMETER Path
         Override the W3C log directory. Passed through to Get-IISW3CLog.
 
@@ -98,6 +101,11 @@ function Invoke-IISW3CLogAnalysis {
         [datetime]$EndTime = (Get-Date),
 
         [Parameter()]
+        [ValidateRange(1, 8760)]
+        [Alias('Hours')]
+        [int]$LastHours,
+
+        [Parameter()]
         [string]$Path,
 
         [Parameter(ParameterSetName = 'BySiteId')]
@@ -121,6 +129,14 @@ function Invoke-IISW3CLogAnalysis {
     # Ensure status data is loaded (normally done at module import; guard here
     # in case this cmdlet is dot-sourced in isolation during development).
     if ($null -eq $script:StatusData) { Initialize-StatusData }
+
+    if ($PSBoundParameters.ContainsKey('LastHours')) {
+        if ($PSBoundParameters.ContainsKey('StartTime') -or $PSBoundParameters.ContainsKey('EndTime')) {
+            Write-Warning 'LastHours is set; StartTime and EndTime are ignored.'
+        }
+        $EndTime   = Get-Date
+        $StartTime = $EndTime.AddHours(-$LastHours)
+    }
 
     # ------------------------------------------------------------------
     # Collect raw entries via Get-IISW3CLog

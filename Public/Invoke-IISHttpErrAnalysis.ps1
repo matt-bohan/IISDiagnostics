@@ -42,6 +42,10 @@ function Invoke-IISHttpErrAnalysis {
     .PARAMETER EndTime
         End of the window to analyse. Defaults to now.
 
+    .PARAMETER LastHours
+        Window length in whole hours ending now. Avoids passing explicit StartTime/EndTime.
+        When set, StartTime and EndTime are ignored (warning if they were also supplied).
+
     .PARAMETER Path
         Override the HTTPERR log directory. Passed through to Get-IISHttpErrLog.
 
@@ -70,12 +74,26 @@ function Invoke-IISHttpErrAnalysis {
     param(
         [Parameter()] [datetime]$StartTime = (Get-Date).AddHours(-1),
         [Parameter()] [datetime]$EndTime   = (Get-Date),
+
+        [Parameter()]
+        [ValidateRange(1, 8760)]
+        [Alias('Hours')]
+        [int]$LastHours,
+
         [Parameter()] [string]$Path,
         [Parameter()] [ValidateRange(1, 60)]  [int]$BurstWindowMinutes = 5,
         [Parameter()] [ValidateRange(1, 100)] [int]$BurstThreshold     = 5
     )
 
     Assert-ElevatedSession -CmdletName $MyInvocation.MyCommand.Name
+
+    if ($PSBoundParameters.ContainsKey('LastHours')) {
+        if ($PSBoundParameters.ContainsKey('StartTime') -or $PSBoundParameters.ContainsKey('EndTime')) {
+            Write-Warning 'LastHours is set; StartTime and EndTime are ignored.'
+        }
+        $EndTime   = Get-Date
+        $StartTime = $EndTime.AddHours(-$LastHours)
+    }
 
     $getParams = @{ StartTime = $StartTime; EndTime = $EndTime; Verbose = $false }
     if ($PSBoundParameters.ContainsKey('Path')) { $getParams['Path'] = $Path }

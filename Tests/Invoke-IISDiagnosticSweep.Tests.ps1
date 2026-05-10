@@ -47,8 +47,7 @@ Describe 'Invoke-IISDiagnosticSweep' {
                 -ReportPath $reportPath `
                 -SkipW3C `
                 -SkipEventLog `
-                -StartTime (Get-Date).AddHours(-1) `
-                -EndTime (Get-Date)
+                -LastHours 1
 
             if ($result.PSObject.TypeNames[0] -ne 'IISDiagnostics.SweepResult') {
                 throw "Expected IISDiagnostics.SweepResult, got '$($result.PSObject.TypeNames[0])'."

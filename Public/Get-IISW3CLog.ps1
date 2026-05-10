@@ -38,6 +38,9 @@ function Get-IISW3CLog {
     .PARAMETER EndTime
         End of the time window (inclusive). Defaults to now.
 
+    .PARAMETER LastHours
+        Whole-hour window ending now. Avoids locale-dependent date entry.
+
     .PARAMETER Path
         Full path to a W3C log directory or file. Overrides all automatic path resolution.
         Use when logs are in a non-standard location.
@@ -110,6 +113,11 @@ function Get-IISW3CLog {
         [datetime]$EndTime = (Get-Date),
 
         [Parameter()]
+        [ValidateRange(1, 8760)]
+        [Alias('Hours')]
+        [int]$LastHours,
+
+        [Parameter()]
         [string]$Path,
 
         [Parameter(ParameterSetName = 'BySiteId')]
@@ -130,6 +138,14 @@ function Get-IISW3CLog {
     )
 
     Assert-ElevatedSession -CmdletName $MyInvocation.MyCommand.Name
+
+    if ($PSBoundParameters.ContainsKey('LastHours')) {
+        if ($PSBoundParameters.ContainsKey('StartTime') -or $PSBoundParameters.ContainsKey('EndTime')) {
+            Write-Warning 'LastHours is set; StartTime and EndTime are ignored.'
+        }
+        $EndTime   = Get-Date
+        $StartTime = $EndTime.AddHours(-$LastHours)
+    }
 
     if ($StartTime -ge $EndTime) {
         throw "StartTime ($StartTime) must be earlier than EndTime ($EndTime)."
