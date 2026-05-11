@@ -332,7 +332,7 @@ function Get-IISW3CLog {
                 }
                 else {
                     Write-Warning (
-                        "Log directory '$subDir' not found under fallback root '$logRoot'. " +
+                        "Could not resolve a site log directory for SiteId '$SiteId' under fallback root '$logRoot'. " +
                         "The site may log to a custom folder; install WebAdministration, or pass -Path to the site's log directory " +
                         "(IIS Manager -> Site -> Logging -> Directory)."
                     )

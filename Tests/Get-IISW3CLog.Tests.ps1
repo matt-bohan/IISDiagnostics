@@ -29,6 +29,7 @@ Describe 'Get-IISW3CLog' {
             ) | Set-Content -LiteralPath $logPath
 
             function Get-WebConfigurationProperty {
+                [CmdletBinding()]
                 param(
                     [string]$PSPath,
                     [string]$Filter,
