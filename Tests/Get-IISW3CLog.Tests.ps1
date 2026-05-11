@@ -15,12 +15,12 @@ Describe 'Get-IISW3CLog' {
             Mock Get-Module { [pscustomobject]@{ Name = 'WebAdministration' } } -ParameterFilter { $Name -eq 'WebAdministration' }
             Mock Get-W3CLogDirectoriesFromAllSites { @() }
 
-            $centralRoot = Join-Path $TestDrive 'central-w3c'
-            $null = New-Item -Path $centralRoot -ItemType Directory -Force
+            $centralW3CLogDirectory = Join-Path $TestDrive 'central-w3c'
+            $null = New-Item -Path $centralW3CLogDirectory -ItemType Directory -Force
 
             $entryUtc = (Get-Date).ToUniversalTime().AddMinutes(-5)
             $logName = 'u_ex{0}.log' -f $entryUtc.ToString('yyMMdd')
-            $logPath = Join-Path $centralRoot $logName
+            $logPath = Join-Path $centralW3CLogDirectory $logName
             @(
                 '#Software: Microsoft Internet Information Services 10.0'
                 '#Version: 1.0'
@@ -40,7 +40,7 @@ Describe 'Get-IISW3CLog' {
                         return [pscustomobject]@{ Value = $true }
                     }
                     'system.applicationHost/log/centralW3CLogFile::directory' {
-                        return [pscustomobject]@{ Value = $centralRoot }
+                        return [pscustomobject]@{ Value = $centralW3CLogDirectory }
                     }
                     'system.applicationHost/sites/siteDefaults/logFile::directory' {
                         return [pscustomobject]@{ Value = 'C:\inetpub\logs\LogFiles' }

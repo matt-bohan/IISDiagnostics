@@ -254,7 +254,7 @@ function Get-IISW3CLog {
         if ($logDirs.Count -eq 0) {
             $logRoot = $null
 
-            $rootContainsDirectLogs = $false
+            $useDirectLogFilesInRoot = $false
 
             if (Get-Module -Name WebAdministration -ErrorAction SilentlyContinue) {
                 try {
@@ -276,7 +276,7 @@ function Get-IISW3CLog {
                             -ErrorAction SilentlyContinue
                         if ($centralDir -and $centralDir.Value) {
                             $logRoot = Expand-IISDiagnosticsLogPath -Path ([string]$centralDir.Value)
-                            $rootContainsDirectLogs = $true
+                            $useDirectLogFilesInRoot = $true
                         }
                     }
 
@@ -326,9 +326,9 @@ function Get-IISW3CLog {
             }
 
             if ($PSCmdlet.ParameterSetName -in 'BySiteId', 'BySiteName') {
-                $resolvedOne = Resolve-W3CSiteLogDirectory -DirectoryFromIis $logRoot -SiteId $SiteId
-                if ($resolvedOne) {
-                    $logDirs.Add($resolvedOne)
+                $resolvedSiteLogDirectory = Resolve-W3CSiteLogDirectory -DirectoryFromIis $logRoot -SiteId $SiteId
+                if ($resolvedSiteLogDirectory) {
+                    $logDirs.Add($resolvedSiteLogDirectory)
                 }
                 else {
                     Write-Warning (
@@ -341,7 +341,7 @@ function Get-IISW3CLog {
             }
             else {
                 $directLogs = @()
-                if ($rootContainsDirectLogs) {
+                if ($useDirectLogFilesInRoot) {
                     $directLogs = @(Get-ChildItem -LiteralPath $logRoot -Filter 'u_ex*.log' -File -ErrorAction SilentlyContinue)
                 }
 
