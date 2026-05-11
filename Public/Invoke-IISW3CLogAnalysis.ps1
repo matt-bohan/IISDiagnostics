@@ -7,7 +7,7 @@ function Invoke-IISW3CLogAnalysis {
         descriptions and remediation guidance from the module's status code data.
 
     .DESCRIPTION
-        Calls Get-IISW3CLog internally, groups entries by sc-status and sc-substatus
+        Aggregates W3C log entries in a single pass, groups by sc-status and sc-substatus
         combination, and looks up each combination in the module's StatusCodes.json data
         (the same data used by Get-IISStatusHelp).
 
@@ -139,68 +139,36 @@ function Invoke-IISW3CLogAnalysis {
     }
 
     # ------------------------------------------------------------------
-    # Collect raw entries via Get-IISW3CLog
+    # Aggregate directly from log files (no per-request materialisation)
     # ------------------------------------------------------------------
-    $getParams = @{
-        StartTime    = $StartTime
-        EndTime      = $EndTime
-        Verbose      = $false
-        AnalysisMode = $true
+    $startUtc = $StartTime.ToUniversalTime()
+    $endUtc   = $EndTime.ToUniversalTime()
+
+    $measureParams = @{
+        PSCmdlet         = $PSCmdlet
+        ParameterSetName = $PSCmdlet.ParameterSetName
+        StartUtc         = $startUtc
+        EndUtc           = $endUtc
     }
-    if ($PSBoundParameters.ContainsKey('Path'))     { $getParams['Path']     = $Path     }
-    if ($PSBoundParameters.ContainsKey('SiteId'))   { $getParams['SiteId']   = $SiteId   }
-    if ($PSBoundParameters.ContainsKey('SiteName')) { $getParams['SiteName'] = $SiteName }
+    if ($PSBoundParameters.ContainsKey('Path'))     { $measureParams['Path']     = $Path     }
+    if ($PSBoundParameters.ContainsKey('SiteId'))   { $measureParams['SiteId']   = $SiteId   }
+    if ($PSBoundParameters.ContainsKey('SiteName')) { $measureParams['SiteName'] = $SiteName }
 
-    Write-Verbose 'Streaming W3C entries for analysis...'
+    Write-Verbose 'Aggregating W3C log entries for analysis...'
+    $metrics = Measure-IISW3CLogAnalysis @measureParams
 
-    $groupData = @{}
-    $total     = 0
-
-    foreach ($entry in (Get-IISW3CLog @getParams)) {
-        $total++
-        $statusCode = if ($null -ne $entry.StatusCode) { [int]$entry.StatusCode } else { 0 }
-        $subStatus  = if ($null -ne $entry.SubStatus)  { [int]$entry.SubStatus  } else { 0 }
-        $statusKey  = "$statusCode.$subStatus"
-
-        if (-not $groupData.ContainsKey($statusKey)) {
-            $groupData[$statusKey] = @{
-                StatusCode   = $statusCode
-                SubStatus    = $subStatus
-                Count        = 0
-                FirstSeen    = $entry.Timestamp
-                LastSeen     = $entry.Timestamp
-                UriCounts    = @{}
-                ClientCounts = @{}
-            }
-        }
-
-        $bucket = $groupData[$statusKey]
-        $bucket.Count++
-        if ($entry.Timestamp -lt $bucket.FirstSeen) { $bucket.FirstSeen = $entry.Timestamp }
-        if ($entry.Timestamp -gt $bucket.LastSeen)  { $bucket.LastSeen  = $entry.Timestamp }
-
-        if ($statusCode -ge 400) {
-            if ($entry.UriStem) {
-                $uriStem = [string]$entry.UriStem
-                if ($bucket.UriCounts.ContainsKey($uriStem)) {
-                    $bucket.UriCounts[$uriStem]++
-                }
-                else {
-                    $bucket.UriCounts[$uriStem] = 1
-                }
-            }
-
-            if ($entry.ClientIp) {
-                $clientIp = [string]$entry.ClientIp
-                if ($bucket.ClientCounts.ContainsKey($clientIp)) {
-                    $bucket.ClientCounts[$clientIp]++
-                }
-                else {
-                    $bucket.ClientCounts[$clientIp] = 1
-                }
-            }
-        }
+    if ($metrics.LogFiles.Count -eq 0) {
+        $dirList = ($metrics.LogDirectories | ForEach-Object { "`n  - $_" }) -join ''
+        Write-Warning (
+            "No W3C log files matched the time window $StartTime to $EndTime (local). Scanned:$dirList`n" +
+            "Try -LastHours with a larger value, pass -Path to the folder containing u_ex*.log files, " +
+            "or confirm site logging paths under IIS Manager -> Sites -> Logging."
+        )
+        return
     }
+
+    $groupData = $metrics.GroupData
+    $total     = $metrics.Total
 
     Write-Verbose "Counted $total entries across $($groupData.Count) status group(s)."
 

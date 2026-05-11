@@ -161,257 +161,26 @@ function Get-IISW3CLog {
     $endUtc   = $EndTime.ToUniversalTime()
 
     # ------------------------------------------------------------------
-    # Resolve log directories
+    # Resolve log directories and files
     # ------------------------------------------------------------------
+    $resolveParams = @{
+        PSCmdlet         = $PSCmdlet
+        ParameterSetName = $PSCmdlet.ParameterSetName
+        StartUtc         = $startUtc
+        EndUtc           = $endUtc
+    }
+    if ($PSBoundParameters.ContainsKey('Path'))     { $resolveParams['Path']     = $Path     }
+    if ($PSBoundParameters.ContainsKey('SiteId'))   { $resolveParams['SiteId']   = $SiteId   }
+    if ($PSBoundParameters.ContainsKey('SiteName')) { $resolveParams['SiteName'] = $SiteName }
+
+    $targets = Resolve-IISW3CLogReadTargets @resolveParams
     $logDirs = [System.Collections.Generic.List[string]]::new()
+    foreach ($dir in @($targets.LogDirectories)) { $logDirs.Add($dir) }
 
-    if ($PSBoundParameters.ContainsKey('Path')) {
-        $expandedPath = Expand-IISDiagnosticsLogPath -Path $Path
-        # Explicit override - accept a file or directory
-        if (Test-Path -LiteralPath $expandedPath -PathType Leaf) {
-            $logDirs.Add((Split-Path -LiteralPath $expandedPath -Parent))
-        }
-        elseif (Test-Path -LiteralPath $expandedPath -PathType Container) {
-            $logDirs.Add($expandedPath)
-        }
-        else {
-            $PSCmdlet.ThrowTerminatingError(
-                [System.Management.Automation.ErrorRecord]::new(
-                    [System.IO.IOException]::new("Path '$expandedPath' does not exist."),
-                    'W3CPathNotFound',
-                    [System.Management.Automation.ErrorCategory]::ObjectNotFound,
-                    $expandedPath
-                )
-            )
-        }
-    }
-    else {
-        # Prefer per-site directories from IIS (supports custom drives and non-default layouts).
-        $resolvedFromSites = @()
-
-        $webAdminLoaded = $false
-        try {
-            if (-not (Get-Module -Name WebAdministration -ErrorAction SilentlyContinue)) {
-                Import-Module WebAdministration -ErrorAction Stop
-            }
-            $webAdminLoaded = $true
-        }
-        catch {
-            Write-Verbose "WebAdministration module could not be loaded for W3C path discovery: $_"
-        }
-
-        try {
-            if ($PSCmdlet.ParameterSetName -eq 'AllSites') {
-                $resolvedFromSites = @(Get-W3CLogDirectoriesFromAllSites)
-                foreach ($d in $resolvedFromSites) {
-                    $logDirs.Add($d)
-                }
-            }
-            elseif ($PSCmdlet.ParameterSetName -in 'BySiteId', 'BySiteName') {
-                $site = $null
-                $resolvedSiteName = $null
-
-                if ($webAdminLoaded) {
-                    if ($PSCmdlet.ParameterSetName -eq 'BySiteName') {
-                        $site = Get-ChildItem -Path 'IIS:\Sites' -ErrorAction Stop |
-                            Where-Object { $_.Name -eq $SiteName } |
-                            Select-Object -First 1
-                        if ($site) {
-                            $SiteId = [int]$site.Id
-                            $resolvedSiteName = [string]$site.Name
-                        }
-                    }
-                    else {
-                        $site = Get-ChildItem -Path 'IIS:\Sites' -ErrorAction Stop |
-                            Where-Object { [int]$_.Id -eq $SiteId } |
-                            Select-Object -First 1
-                        if ($site) {
-                            $resolvedSiteName = [string]$site.Name
-                        }
-                    }
-                }
-
-                if (-not $resolvedSiteName -and $PSCmdlet.ParameterSetName -eq 'BySiteName') {
-                    $resolvedSiteName = $SiteName
-                }
-
-                if (-not $resolvedSiteName) {
-                    foreach ($entry in @(Get-W3CLogSiteEntriesFromApplicationHost)) {
-                        if ($entry.SiteId -eq $SiteId) {
-                            $resolvedSiteName = [string]$entry.SiteName
-                            break
-                        }
-                    }
-                }
-
-                if (-not $site -and $webAdminLoaded) {
-                    Write-Warning "Site not found in IIS (ParameterSet: $($PSCmdlet.ParameterSetName)). Trying applicationHost.config for the configured log directory."
-                }
-
-                if ($resolvedSiteName -or $PSCmdlet.ParameterSetName -eq 'BySiteId') {
-                    $rawDir = Get-IISSiteW3CLogDirectoryRaw `
-                        -SiteId $SiteId `
-                        -SiteName $(if ($resolvedSiteName) { $resolvedSiteName } else { '' }) `
-                        -SiteObject $site
-
-                    if ($rawDir) {
-                        $resolvedOne = Resolve-W3CSiteLogDirectory -DirectoryFromIis $rawDir -SiteId $SiteId
-                        if ($resolvedOne) {
-                            $resolvedFromSites = @($resolvedOne)
-                            $logDirs.Add($resolvedOne)
-                        }
-                    }
-                }
-            }
-        }
-        catch {
-            Write-Verbose "IIS site log discovery failed: $_. Falling back to default layout."
-        }
-
-        # Fallback: classic LogFiles\W3SVCn layout under a configurable root
-        if ($logDirs.Count -eq 0) {
-            $logRoot = $null
-
-            $useDirectLogFilesInRoot = $false
-
-            if (Get-Module -Name WebAdministration -ErrorAction SilentlyContinue) {
-                try {
-                    $centralEnabled = $false
-                    $central = Get-WebConfigurationProperty `
-                        -PSPath 'MACHINE/WEBROOT/APPHOST' `
-                        -Filter 'system.applicationHost/log/centralW3CLogFile' `
-                        -Name enabled `
-                        -ErrorAction SilentlyContinue
-                    if ($central -and $null -ne $central.Value) {
-                        $centralEnabled = [bool]$central.Value
-                    }
-
-                    if ($centralEnabled) {
-                        $centralDir = Get-WebConfigurationProperty `
-                            -PSPath 'MACHINE/WEBROOT/APPHOST' `
-                            -Filter 'system.applicationHost/log/centralW3CLogFile' `
-                            -Name directory `
-                            -ErrorAction SilentlyContinue
-                        if ($centralDir -and $centralDir.Value) {
-                            $logRoot = Expand-IISDiagnosticsLogPath -Path ([string]$centralDir.Value)
-                            $useDirectLogFilesInRoot = $true
-                        }
-                    }
-
-                    if (-not $logRoot) {
-                        $defaults = Get-WebConfigurationProperty `
-                        -PSPath 'MACHINE/WEBROOT/APPHOST' `
-                        -Filter 'system.applicationHost/sites/siteDefaults/logFile' `
-                        -Name directory `
-                        -ErrorAction SilentlyContinue
-                        if ($defaults -and $defaults.Value) {
-                            $logRoot = Expand-IISDiagnosticsLogPath -Path ([string]$defaults.Value)
-                        }
-                    }
-
-                    if (-not $logRoot) {
-                        $central = Get-WebConfigurationProperty `
-                            -PSPath 'MACHINE/WEBROOT/APPHOST' `
-                            -Filter 'system.applicationHost/log' `
-                            -Name centralW3CLogFile.directory `
-                            -ErrorAction SilentlyContinue
-                        if ($central -and $central.Value) {
-                            $logRoot = Expand-IISDiagnosticsLogPath -Path ([string]$central.Value)
-                        }
-                    }
-                }
-                catch {
-                    Write-Verbose "Could not read applicationHost log paths: $_"
-                }
-            }
-
-            if (-not $logRoot) {
-                $configPath = Join-Path $env:windir 'System32\inetsrv\config\applicationHost.config'
-                if (Test-Path -LiteralPath $configPath) {
-                    try {
-                        [xml]$appHostDoc = Get-Content -LiteralPath $configPath -ErrorAction Stop
-                        $appHostNode = $appHostDoc.configuration.'system.applicationHost'
-                        if ($appHostNode -and $appHostNode.sites -and $appHostNode.sites.siteDefaults -and $appHostNode.sites.siteDefaults.logFile) {
-                            $defaultLogDirectory = [string]$appHostNode.sites.siteDefaults.logFile.directory
-                            if (-not [string]::IsNullOrWhiteSpace($defaultLogDirectory)) {
-                                $logRoot = Expand-IISDiagnosticsLogPath -Path $defaultLogDirectory
-                            }
-                        }
-                    }
-                    catch {
-                        Write-Verbose "Could not read siteDefaults W3C directory from applicationHost.config: $_"
-                    }
-                }
-            }
-
-            if (-not $logRoot) {
-                $logRoot = Join-Path $env:SystemDrive 'inetpub\logs\LogFiles'
-            }
-
-            if (-not (Test-Path -LiteralPath $logRoot)) {
-                $PSCmdlet.ThrowTerminatingError(
-                    [System.Management.Automation.ErrorRecord]::new(
-                        [System.IO.DirectoryNotFoundException]::new(
-                            "W3C log root '$logRoot' not found after IIS discovery and fallbacks. " +
-                            "Specify the folder that contains u_ex*.log (or W3SVCn subfolders) with -Path. " +
-                            "Check IIS Manager -> Sites -> site -> Logging, or applicationHost.config siteDefaults/logFile."),
-                        'W3CLogRootNotFound',
-                        [System.Management.Automation.ErrorCategory]::ObjectNotFound,
-                        $logRoot
-                    )
-                )
-            }
-
-            if ($PSCmdlet.ParameterSetName -in 'BySiteId', 'BySiteName') {
-                $resolvedSiteLogDirectory = Resolve-W3CSiteLogDirectory -DirectoryFromIis $logRoot -SiteId $SiteId
-                if ($resolvedSiteLogDirectory) {
-                    $logDirs.Add($resolvedSiteLogDirectory)
-                }
-                else {
-                    Write-Warning (
-                        "Could not resolve a site log directory for SiteId '$SiteId' under fallback root '$logRoot'. " +
-                        "The site may log to a custom folder; install WebAdministration, or pass -Path to the site's log directory " +
-                        "(IIS Manager -> Site -> Logging -> Directory)."
-                    )
-                    return
-                }
-            }
-            else {
-                $directLogs = @()
-                if ($useDirectLogFilesInRoot) {
-                    $directLogs = @(Get-ChildItem -LiteralPath $logRoot -Filter 'u_ex*.log' -File -ErrorAction SilentlyContinue)
-                }
-
-                if ($directLogs.Count -gt 0) {
-                    $logDirs.Add($logRoot)
-                }
-                else {
-                    $found = @(Get-ChildItem -LiteralPath $logRoot -Directory -ErrorAction SilentlyContinue |
-                           Where-Object { $_.Name -match '^W3SVC\d+$' })
-
-                    if (-not $found) {
-                        Write-Warning (
-                            "No W3SVC* site folders under '$logRoot' and per-site IIS discovery returned nothing. " +
-                            "Confirm W3C logging is enabled, or pass -Path to your LogFiles folder or W3SVCn directory."
-                        )
-                        return
-                    }
-
-                    $found | ForEach-Object { $logDirs.Add($_.FullName) }
-                }
-            }
-        }
-    }
+    $logFiles = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
+    foreach ($file in @($targets.LogFiles)) { $logFiles.Add($file) }
 
     Write-Verbose "Log directories to scan: $($logDirs -join ', ')"
-
-    # ------------------------------------------------------------------
-    # Discover log files across all directories (filename/window overlap only)
-    # ------------------------------------------------------------------
-    $logFiles = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
-    foreach ($file in @(Get-W3CLogFilesForTimeWindow -LogDirectories @($logDirs) -StartUtc $startUtc -EndUtc $endUtc)) {
-        $logFiles.Add($file)
-    }
 
     if ($logFiles.Count -eq 0) {
         $dirList = ($logDirs | ForEach-Object { "`n  - $_" }) -join ''
@@ -469,6 +238,9 @@ function Get-IISW3CLog {
 
         $fieldNames  = $null
         $fieldCount  = 0
+        $dateIdx     = -1
+        $timeIdx     = -1
+        $startOffset = Get-W3CLogTailReadStartOffset -File $file -StartUtc $startUtc -EndUtc $endUtc
 
         $stream = [System.IO.File]::Open(
             $file.FullName,
@@ -476,15 +248,41 @@ function Get-IISW3CLog {
             [System.IO.FileAccess]::Read,
             [System.IO.FileShare]::ReadWrite
         )
-        $reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::UTF8)
+        $reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::UTF8, $false, 65536)
 
         try {
+            $unusedStatusIdx = -1
+            $unusedSubStatusIdx = -1
+            $unusedUriIdx = -1
+            $unusedClientIdx = -1
+
+            Read-IISW3CLogFieldsHeader -Reader $reader `
+                -FieldNames ([ref]$fieldNames) `
+                -DateIdx ([ref]$dateIdx) `
+                -TimeIdx ([ref]$timeIdx) `
+                -StatusIdx ([ref]$unusedStatusIdx) `
+                -SubStatusIdx ([ref]$unusedSubStatusIdx) `
+                -UriIdx ([ref]$unusedUriIdx) `
+                -ClientIdx ([ref]$unusedClientIdx) `
+                -FieldCount ([ref]$fieldCount)
+            if ($fieldNames) {
+                Write-Verbose "  Fields ($fieldCount): $($fieldNames -join ', ')"
+            }
+
+            if ($startOffset -gt 0) {
+                $stream.Seek($startOffset, [System.IO.SeekOrigin]::Begin) | Out-Null
+                $reader.DiscardBufferedData()
+                $null = $reader.ReadLine()
+            }
+
             while ($null -ne ($rawLine = $reader.ReadLine())) {
 
                 if ($rawLine.StartsWith('#')) {
                     if ($rawLine -match '^#Fields:\s+(.+)') {
                         $fieldNames = $Matches[1].Trim() -split '\s+'
                         $fieldCount = $fieldNames.Count
+                        $dateIdx = [Array]::IndexOf($fieldNames, 'date')
+                        $timeIdx = [Array]::IndexOf($fieldNames, 'time')
                         Write-Verbose "  Fields ($fieldCount): $($fieldNames -join ', ')"
                     }
                     continue
@@ -492,15 +290,8 @@ function Get-IISW3CLog {
 
                 if ([string]::IsNullOrWhiteSpace($rawLine) -or $null -eq $fieldNames) { continue }
 
-                $parts = $rawLine -split '\s+'
-                # Guard: W3C lines can have trailing spaces or extra fields in rare cases
+                $parts = $rawLine -split '\s+', ($fieldCount + 1)
                 if ($parts.Count -lt 2) { continue }
-
-                # ----------------------------------------------------------
-                # Parse timestamp - requires both date and time fields
-                # ----------------------------------------------------------
-                $dateIdx = [Array]::IndexOf($fieldNames, 'date')
-                $timeIdx = [Array]::IndexOf($fieldNames, 'time')
 
                 if ($dateIdx -lt 0 -or $timeIdx -lt 0) { continue }
                 if ($dateIdx -ge $parts.Count -or $timeIdx -ge $parts.Count) { continue }
@@ -515,7 +306,8 @@ function Get-IISW3CLog {
                     [ref]$entryUtc
                 )
                 if (-not $parsed) { continue }
-                if ($entryUtc -lt $startUtc -or $entryUtc -gt $endUtc) { continue }
+                if ($entryUtc -lt $startUtc) { continue }
+                if ($entryUtc -gt $endUtc) { break }
 
                 # ----------------------------------------------------------
                 # Map fields to a hashtable by name for clean access below.
