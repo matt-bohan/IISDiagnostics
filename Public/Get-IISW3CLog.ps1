@@ -186,68 +186,83 @@ function Get-IISW3CLog {
         # Prefer per-site directories from IIS (supports custom drives and non-default layouts).
         $resolvedFromSites = @()
 
-        if (Get-Module -Name WebAdministration -ListAvailable -ErrorAction SilentlyContinue) {
-            try {
-                if (-not (Get-Module -Name WebAdministration)) {
-                    Import-Module WebAdministration -ErrorAction Stop
-                }
+        $webAdminLoaded = $false
+        try {
+            if (-not (Get-Module -Name WebAdministration -ErrorAction SilentlyContinue)) {
+                Import-Module WebAdministration -ErrorAction Stop
+            }
+            $webAdminLoaded = $true
+        }
+        catch {
+            Write-Verbose "WebAdministration module could not be loaded for W3C path discovery: $_"
+        }
 
-                if ($PSCmdlet.ParameterSetName -eq 'AllSites') {
-                    $resolvedFromSites = @(Get-W3CLogDirectoriesFromAllSites)
-                    foreach ($d in $resolvedFromSites) {
-                        $logDirs.Add($d)
-                    }
+        try {
+            if ($PSCmdlet.ParameterSetName -eq 'AllSites') {
+                $resolvedFromSites = @(Get-W3CLogDirectoriesFromAllSites)
+                foreach ($d in $resolvedFromSites) {
+                    $logDirs.Add($d)
                 }
-                elseif ($PSCmdlet.ParameterSetName -in 'BySiteId', 'BySiteName') {
-                    $site = $null
+            }
+            elseif ($PSCmdlet.ParameterSetName -in 'BySiteId', 'BySiteName') {
+                $site = $null
+                $resolvedSiteName = $null
+
+                if ($webAdminLoaded) {
                     if ($PSCmdlet.ParameterSetName -eq 'BySiteName') {
                         $site = Get-ChildItem -Path 'IIS:\Sites' -ErrorAction Stop |
                             Where-Object { $_.Name -eq $SiteName } |
                             Select-Object -First 1
                         if ($site) {
                             $SiteId = [int]$site.Id
+                            $resolvedSiteName = [string]$site.Name
                         }
                     }
                     else {
                         $site = Get-ChildItem -Path 'IIS:\Sites' -ErrorAction Stop |
                             Where-Object { [int]$_.Id -eq $SiteId } |
                             Select-Object -First 1
-                    }
-
-                    if (-not $site) {
-                        Write-Warning "Site not found in IIS (ParameterSet: $($PSCmdlet.ParameterSetName)). Falling back to folder layout under default root."
-                    }
-                    else {
-                        $rawDir = $null
-                        try {
-                            $cfgDir = Get-WebConfigurationProperty `
-                                -PSPath "IIS:\Sites\$($site.Name)" `
-                                -Filter 'system.applicationHost/sites/site/logFile' `
-                                -Name directory `
-                                -ErrorAction SilentlyContinue
-                            if ($cfgDir -and $cfgDir.Value) {
-                                $rawDir = [string]$cfgDir.Value
-                            }
+                        if ($site) {
+                            $resolvedSiteName = [string]$site.Name
                         }
-                        catch { }
+                    }
+                }
 
-                        if (-not $rawDir) {
-                            try { $rawDir = [string]$site.LogFile.Directory } catch { }
+                if (-not $resolvedSiteName -and $PSCmdlet.ParameterSetName -eq 'BySiteName') {
+                    $resolvedSiteName = $SiteName
+                }
+
+                if (-not $resolvedSiteName) {
+                    foreach ($entry in @(Get-W3CLogSiteEntriesFromApplicationHost)) {
+                        if ($entry.SiteId -eq $SiteId) {
+                            $resolvedSiteName = [string]$entry.SiteName
+                            break
                         }
+                    }
+                }
 
-                        if ($rawDir) {
-                            $resolvedOne = Resolve-W3CSiteLogDirectory -DirectoryFromIis $rawDir -SiteId ([int]$site.Id)
-                            if ($resolvedOne) {
-                                $resolvedFromSites = @($resolvedOne)
-                                $logDirs.Add($resolvedOne)
-                            }
+                if (-not $site -and $webAdminLoaded) {
+                    Write-Warning "Site not found in IIS (ParameterSet: $($PSCmdlet.ParameterSetName)). Trying applicationHost.config for the configured log directory."
+                }
+
+                if ($resolvedSiteName -or $PSCmdlet.ParameterSetName -eq 'BySiteId') {
+                    $rawDir = Get-IISSiteW3CLogDirectoryRaw `
+                        -SiteId $SiteId `
+                        -SiteName $(if ($resolvedSiteName) { $resolvedSiteName } else { '' }) `
+                        -SiteObject $site
+
+                    if ($rawDir) {
+                        $resolvedOne = Resolve-W3CSiteLogDirectory -DirectoryFromIis $rawDir -SiteId $SiteId
+                        if ($resolvedOne) {
+                            $resolvedFromSites = @($resolvedOne)
+                            $logDirs.Add($resolvedOne)
                         }
                     }
                 }
             }
-            catch {
-                Write-Verbose "WebAdministration site log discovery failed: $_. Falling back to default layout."
-            }
+        }
+        catch {
+            Write-Verbose "IIS site log discovery failed: $_. Falling back to default layout."
         }
 
         # Fallback: classic LogFiles\W3SVCn layout under a configurable root
@@ -304,6 +319,25 @@ function Get-IISW3CLog {
                 }
                 catch {
                     Write-Verbose "Could not read applicationHost log paths: $_"
+                }
+            }
+
+            if (-not $logRoot) {
+                $configPath = Join-Path $env:windir 'System32\inetsrv\config\applicationHost.config'
+                if (Test-Path -LiteralPath $configPath) {
+                    try {
+                        [xml]$appHostDoc = Get-Content -LiteralPath $configPath -ErrorAction Stop
+                        $appHostNode = $appHostDoc.configuration.'system.applicationHost'
+                        if ($appHostNode -and $appHostNode.sites -and $appHostNode.sites.siteDefaults -and $appHostNode.sites.siteDefaults.logFile) {
+                            $defaultLogDirectory = [string]$appHostNode.sites.siteDefaults.logFile.directory
+                            if (-not [string]::IsNullOrWhiteSpace($defaultLogDirectory)) {
+                                $logRoot = Expand-IISDiagnosticsLogPath -Path $defaultLogDirectory
+                            }
+                        }
+                    }
+                    catch {
+                        Write-Verbose "Could not read siteDefaults W3C directory from applicationHost.config: $_"
+                    }
                 }
             }
 
