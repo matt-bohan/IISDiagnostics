@@ -254,15 +254,41 @@ function Get-IISW3CLog {
         if ($logDirs.Count -eq 0) {
             $logRoot = $null
 
+            $rootContainsDirectLogs = $false
+
             if (Get-Module -Name WebAdministration -ErrorAction SilentlyContinue) {
                 try {
-                    $defaults = Get-WebConfigurationProperty `
+                    $centralEnabled = $false
+                    $central = Get-WebConfigurationProperty `
+                        -PSPath 'MACHINE/WEBROOT/APPHOST' `
+                        -Filter 'system.applicationHost/log/centralW3CLogFile' `
+                        -Name enabled `
+                        -ErrorAction SilentlyContinue
+                    if ($central -and $null -ne $central.Value) {
+                        $centralEnabled = [bool]$central.Value
+                    }
+
+                    if ($centralEnabled) {
+                        $centralDir = Get-WebConfigurationProperty `
+                            -PSPath 'MACHINE/WEBROOT/APPHOST' `
+                            -Filter 'system.applicationHost/log/centralW3CLogFile' `
+                            -Name directory `
+                            -ErrorAction SilentlyContinue
+                        if ($centralDir -and $centralDir.Value) {
+                            $logRoot = Expand-IISDiagnosticsLogPath -Path ([string]$centralDir.Value)
+                            $rootContainsDirectLogs = $true
+                        }
+                    }
+
+                    if (-not $logRoot) {
+                        $defaults = Get-WebConfigurationProperty `
                         -PSPath 'MACHINE/WEBROOT/APPHOST' `
                         -Filter 'system.applicationHost/sites/siteDefaults/logFile' `
                         -Name directory `
                         -ErrorAction SilentlyContinue
-                    if ($defaults -and $defaults.Value) {
-                        $logRoot = Expand-IISDiagnosticsLogPath -Path ([string]$defaults.Value)
+                        if ($defaults -and $defaults.Value) {
+                            $logRoot = Expand-IISDiagnosticsLogPath -Path ([string]$defaults.Value)
+                        }
                     }
 
                     if (-not $logRoot) {
@@ -300,9 +326,9 @@ function Get-IISW3CLog {
             }
 
             if ($PSCmdlet.ParameterSetName -in 'BySiteId', 'BySiteName') {
-                $subDir = Join-Path $logRoot "W3SVC$SiteId"
-                if (Test-Path -LiteralPath $subDir) {
-                    $logDirs.Add($subDir)
+                $resolvedOne = Resolve-W3CSiteLogDirectory -DirectoryFromIis $logRoot -SiteId $SiteId
+                if ($resolvedOne) {
+                    $logDirs.Add($resolvedOne)
                 }
                 else {
                     Write-Warning (
@@ -314,18 +340,28 @@ function Get-IISW3CLog {
                 }
             }
             else {
-                $found = @(Get-ChildItem -LiteralPath $logRoot -Directory -ErrorAction SilentlyContinue |
-                           Where-Object { $_.Name -match '^W3SVC\d+$' })
-
-                if (-not $found) {
-                    Write-Warning (
-                        "No W3SVC* site folders under '$logRoot' and per-site IIS discovery returned nothing. " +
-                        "Confirm W3C logging is enabled, or pass -Path to your LogFiles folder or W3SVCn directory."
-                    )
-                    return
+                $directLogs = @()
+                if ($rootContainsDirectLogs) {
+                    $directLogs = @(Get-ChildItem -LiteralPath $logRoot -Filter 'u_ex*.log' -File -ErrorAction SilentlyContinue)
                 }
 
-                $found | ForEach-Object { $logDirs.Add($_.FullName) }
+                if ($directLogs.Count -gt 0) {
+                    $logDirs.Add($logRoot)
+                }
+                else {
+                    $found = @(Get-ChildItem -LiteralPath $logRoot -Directory -ErrorAction SilentlyContinue |
+                           Where-Object { $_.Name -match '^W3SVC\d+$' })
+
+                    if (-not $found) {
+                        Write-Warning (
+                            "No W3SVC* site folders under '$logRoot' and per-site IIS discovery returned nothing. " +
+                            "Confirm W3C logging is enabled, or pass -Path to your LogFiles folder or W3SVCn directory."
+                        )
+                        return
+                    }
+
+                    $found | ForEach-Object { $logDirs.Add($_.FullName) }
+                }
             }
         }
     }
