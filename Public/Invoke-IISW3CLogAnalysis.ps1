@@ -142,56 +142,89 @@ function Invoke-IISW3CLogAnalysis {
     # Collect raw entries via Get-IISW3CLog
     # ------------------------------------------------------------------
     $getParams = @{
-        StartTime = $StartTime
-        EndTime   = $EndTime
-        Verbose   = $false
+        StartTime    = $StartTime
+        EndTime      = $EndTime
+        Verbose      = $false
+        AnalysisMode = $true
     }
     if ($PSBoundParameters.ContainsKey('Path'))     { $getParams['Path']     = $Path     }
     if ($PSBoundParameters.ContainsKey('SiteId'))   { $getParams['SiteId']   = $SiteId   }
     if ($PSBoundParameters.ContainsKey('SiteName')) { $getParams['SiteName'] = $SiteName }
 
-    Write-Verbose "Collecting W3C entries for analysis..."
-    $entries = @(Get-IISW3CLog @getParams)
-    $total   = $entries.Count
+    Write-Verbose 'Streaming W3C entries for analysis...'
 
-    Write-Verbose "Collected $total entries. Grouping by status code..."
+    $groupData = @{}
+    $total     = 0
+
+    foreach ($entry in (Get-IISW3CLog @getParams)) {
+        $total++
+        $statusCode = if ($null -ne $entry.StatusCode) { [int]$entry.StatusCode } else { 0 }
+        $subStatus  = if ($null -ne $entry.SubStatus)  { [int]$entry.SubStatus  } else { 0 }
+        $statusKey  = "$statusCode.$subStatus"
+
+        if (-not $groupData.ContainsKey($statusKey)) {
+            $groupData[$statusKey] = @{
+                StatusCode   = $statusCode
+                SubStatus    = $subStatus
+                Count        = 0
+                FirstSeen    = $entry.Timestamp
+                LastSeen     = $entry.Timestamp
+                UriCounts    = @{}
+                ClientCounts = @{}
+            }
+        }
+
+        $bucket = $groupData[$statusKey]
+        $bucket.Count++
+        if ($entry.Timestamp -lt $bucket.FirstSeen) { $bucket.FirstSeen = $entry.Timestamp }
+        if ($entry.Timestamp -gt $bucket.LastSeen)  { $bucket.LastSeen  = $entry.Timestamp }
+
+        if ($statusCode -ge 400) {
+            if ($entry.UriStem) {
+                $uriStem = [string]$entry.UriStem
+                if ($bucket.UriCounts.ContainsKey($uriStem)) {
+                    $bucket.UriCounts[$uriStem]++
+                }
+                else {
+                    $bucket.UriCounts[$uriStem] = 1
+                }
+            }
+
+            if ($entry.ClientIp) {
+                $clientIp = [string]$entry.ClientIp
+                if ($bucket.ClientCounts.ContainsKey($clientIp)) {
+                    $bucket.ClientCounts[$clientIp]++
+                }
+                else {
+                    $bucket.ClientCounts[$clientIp] = 1
+                }
+            }
+        }
+    }
+
+    Write-Verbose "Counted $total entries across $($groupData.Count) status group(s)."
 
     if ($total -eq 0) {
         Write-Warning "No W3C entries found for the specified window and site."
         return
     }
 
-    # ------------------------------------------------------------------
-    # Group by StatusCode + SubStatus
-    # Treat $null SubStatus as 0 - IIS logs 0 for requests with no substatus.
-    # ------------------------------------------------------------------
-    $groups = $entries | Group-Object {
-        $sc  = if ($null -ne $_.StatusCode) { $_.StatusCode } else { 0 }
-        $sub = if ($null -ne $_.SubStatus)  { $_.SubStatus  } else { 0 }
-        "$sc.$sub"
-    }
-
     $resultGroups = [System.Collections.Generic.List[psobject]]::new()
 
-    foreach ($group in $groups) {
-        $count = $group.Count
+    foreach ($statusKey in @($groupData.Keys)) {
+        $bucket = $groupData[$statusKey]
+        $count  = [int]$bucket.Count
 
         if ($count -lt $MinCount) { continue }
 
-        # Parse the grouping key back into its parts
-        $keyParts   = $group.Name -split '\.'
-        $statusCode = [int]$keyParts[0]
-        $subStatus  = [int]$keyParts[1]
+        $statusCode = [int]$bucket.StatusCode
+        $subStatus  = [int]$bucket.SubStatus
 
         if ($ErrorsOnly -and $statusCode -lt 400) { continue }
 
-        $percent    = [math]::Round(($count / $total) * 100, 2)
-        $statusKey  = "$statusCode.$subStatus"
-
-        # Sort group entries once for FirstSeen/LastSeen
-        $sorted   = $group.Group | Sort-Object Timestamp
-        $firstSeen = $sorted[0].Timestamp
-        $lastSeen  = $sorted[-1].Timestamp
+        $percent   = [math]::Round(($count / $total) * 100, 2)
+        $firstSeen = $bucket.FirstSeen
+        $lastSeen  = $bucket.LastSeen
 
         # ------------------------------------------------------------------
         # Look up curated description
@@ -227,19 +260,15 @@ function Invoke-IISW3CLogAnalysis {
         # ------------------------------------------------------------------
         # Top URIs and clients for this group
         # ------------------------------------------------------------------
-        $topUris = @($group.Group |
-            Where-Object { $_.UriStem } |
-            Group-Object UriStem |
-            Sort-Object Count -Descending |
+        $topUris = @($bucket.UriCounts.GetEnumerator() |
+            Sort-Object Value -Descending |
             Select-Object -First 5 |
-            ForEach-Object { [pscustomobject]@{ UriStem = $_.Name; Count = $_.Count } })
+            ForEach-Object { [pscustomobject]@{ UriStem = $_.Key; Count = $_.Value } })
 
-        $topClients = @($group.Group |
-            Where-Object { $_.ClientIp } |
-            Group-Object ClientIp |
-            Sort-Object Count -Descending |
+        $topClients = @($bucket.ClientCounts.GetEnumerator() |
+            Sort-Object Value -Descending |
             Select-Object -First 5 |
-            ForEach-Object { [pscustomobject]@{ ClientIp = $_.Name; Count = $_.Count } })
+            ForEach-Object { [pscustomobject]@{ ClientIp = $_.Key; Count = $_.Value } })
 
         # ------------------------------------------------------------------
         # Pre-render display strings for the format file

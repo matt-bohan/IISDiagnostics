@@ -22,6 +22,50 @@ Describe 'Invoke-IISW3CLogAnalysis' {
         }
     }
 
+    It 'aggregates streamed W3C entries without materialising the full request list' {
+        InModuleScope IISDiagnostics {
+            Mock Assert-ElevatedSession {}
+            Mock Get-IISW3CLog {
+                [pscustomobject]@{
+                    Timestamp  = (Get-Date).AddMinutes(-10)
+                    StatusCode = 500
+                    SubStatus  = 0
+                    UriStem    = '/api/fail'
+                    ClientIp   = '10.0.0.1'
+                }
+                [pscustomobject]@{
+                    Timestamp  = (Get-Date).AddMinutes(-5)
+                    StatusCode = 500
+                    SubStatus  = 0
+                    UriStem    = '/api/fail'
+                    ClientIp   = '10.0.0.2'
+                }
+                [pscustomobject]@{
+                    Timestamp  = (Get-Date).AddMinutes(-1)
+                    StatusCode = 200
+                    SubStatus  = 0
+                    UriStem    = '/'
+                    ClientIp   = '10.0.0.3'
+                }
+            }
+
+            $result = Invoke-IISW3CLogAnalysis -StartTime (Get-Date).AddHours(-1) -EndTime (Get-Date)
+
+            if ($result.TotalRequests -ne 3) {
+                throw "Expected 3 total requests, got $($result.TotalRequests)."
+            }
+            if ($result.ServerErrors.Count -ne 1) {
+                throw "Expected 1 server error group, got $($result.ServerErrors.Count)."
+            }
+            if ($result.ServerErrors[0].Count -ne 2) {
+                throw "Expected 2 requests in the 500 group, got $($result.ServerErrors[0].Count)."
+            }
+            if ($result.ServerErrors[0].TopUris[0].UriStem -ne '/api/fail' -or $result.ServerErrors[0].TopUris[0].Count -ne 2) {
+                throw 'Expected top URI /api/fail with count 2.'
+            }
+        }
+    }
+
     It 'passes a LastHours-derived window to Get-IISW3CLog' {
         InModuleScope IISDiagnostics {
             Mock Assert-ElevatedSession {}

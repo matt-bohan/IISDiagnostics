@@ -137,7 +137,10 @@ function Get-IISW3CLog {
         [int]$SlowThresholdMs = 5000,
 
         [Parameter()]
-        [switch]$Summarise
+        [switch]$Summarise,
+
+        [Parameter()]
+        [switch]$AnalysisMode
     )
 
     Assert-ElevatedSession -CmdletName $MyInvocation.MyCommand.Name
@@ -403,43 +406,11 @@ function Get-IISW3CLog {
     Write-Verbose "Log directories to scan: $($logDirs -join ', ')"
 
     # ------------------------------------------------------------------
-    # Discover log files across all directories
-    # W3C log filenames follow predictable patterns:
-    #   Daily:  u_exYYMMDD.log
-    #   Hourly: u_exYYMMDDHH.log
-    #   Other:  no date in name - fall back to LastWriteTime filtering
+    # Discover log files across all directories (filename/window overlap only)
     # ------------------------------------------------------------------
-    $startDate = $startUtc.Date
-    $endDate   = $endUtc.Date.AddDays(1)   # inclusive upper bound for date comparison
-
     $logFiles = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
-
-    foreach ($dir in $logDirs) {
-        $candidates = @(Get-ChildItem -LiteralPath $dir -Filter '*.log' -ErrorAction SilentlyContinue |
-                        Sort-Object Name)
-
-        foreach ($file in $candidates) {
-            $include = $false
-
-            if ($file.Name -match '^u_ex(\d{2})(\d{2})(\d{2})(\d{2})?') {
-                # Parse date from filename (century assumed 20xx)
-                $fileYear  = 2000 + [int]$Matches[1]
-                $fileMonth = [int]$Matches[2]
-                $fileDay   = [int]$Matches[3]
-                try {
-                    $fileDate = [datetime]::new($fileYear, $fileMonth, $fileDay)
-                    # Include if the file's date falls within or adjacent to the window
-                    $include  = ($fileDate -ge $startDate.AddDays(-1)) -and ($fileDate -le $endDate)
-                }
-                catch { $include = $true }   # date parse failed - include and let timestamp filter handle it
-            }
-            else {
-                # Non-standard name - fall back to LastWriteTime
-                $include = $file.LastWriteTimeUtc -ge $startUtc.AddHours(-1)
-            }
-
-            if ($include) { $logFiles.Add($file) }
-        }
+    foreach ($file in @(Get-W3CLogFilesForTimeWindow -LogDirectories @($logDirs) -StartUtc $startUtc -EndUtc $endUtc)) {
+        $logFiles.Add($file)
     }
 
     if ($logFiles.Count -eq 0) {
@@ -575,50 +546,54 @@ function Get-IISW3CLog {
                 $bytesRecv   = $null ; if ($f['cs-bytes'])        { $null = [int]::TryParse($f['cs-bytes'],        [ref]$bytesRecv)   }
 
                 # ----------------------------------------------------------
-                # AdditionalFields - anything not in the known map
+                # Build the entry object
                 # ----------------------------------------------------------
-                $additional = @{}
-                foreach ($key in $f.Keys) {
-                    if (-not $knownFields.ContainsKey($key) -and $key -ne 'date' -and $key -ne 'time') {
-                        $additional[$key] = $f[$key]
+                $entry = if ($AnalysisMode) {
+                    [pscustomobject]@{
+                        PSTypeName  = 'IISDiagnostics.W3CEntry'
+                        Timestamp   = $entryUtc.ToLocalTime()
+                        ClientIp    = $f['c-ip']
+                        UriStem     = $f['cs-uri-stem']
+                        StatusCode  = $scStatus
+                        SubStatus   = $subStatus
                     }
                 }
+                else {
+                    $additional = @{}
+                    foreach ($key in $f.Keys) {
+                        if (-not $knownFields.ContainsKey($key) -and $key -ne 'date' -and $key -ne 'time') {
+                            $additional[$key] = $f[$key]
+                        }
+                    }
 
-                # ----------------------------------------------------------
-                # Build the entry object
-                # IsConnectionReset is a derived convenience property.
-                # sc-win32-status 64 = ERROR_NETNAME_DELETED - the TCP
-                # connection was reset. In a crash scenario, requests being
-                # actively processed when the worker process died will appear
-                # in W3C logs with this status.
-                # ----------------------------------------------------------
-                $entry = [pscustomobject]@{
-                    PSTypeName        = 'IISDiagnostics.W3CEntry'
-                    Timestamp         = $entryUtc.ToLocalTime()
-                    ClientIp          = $f['c-ip']
-                    ClientPort        = $clientPort
-                    ServerIp          = $f['s-ip']
-                    ServerPort        = $serverPort
-                    SiteName          = $f['s-sitename']
-                    SiteLogFolder     = $file.Directory.Name          # e.g. W3SVC1 - reliable even when s-sitename is not logged
-                    ComputerName      = $f['s-computername']
-                    Method            = $f['cs-method']
-                    UriStem           = $f['cs-uri-stem']
-                    UriQuery          = $f['cs-uri-query']
-                    HttpVersion       = $f['cs-version']
-                    Username          = $f['cs-username']
-                    Host              = $f['cs-host']
-                    UserAgent         = $f['cs(User-Agent)']
-                    Referer           = $f['cs(Referer)']
-                    StatusCode        = $scStatus
-                    SubStatus         = $subStatus
-                    Win32Status       = $win32Status
-                    IsConnectionReset = ($win32Status -eq 64)
-                    TimeTakenMs       = $timeTaken
-                    BytesSent         = $bytesSent
-                    BytesReceived     = $bytesRecv
-                    AdditionalFields  = $additional
-                    SourceFile        = "$($file.Directory.Name)\$($file.Name)"  # W3SVC1\u_ex260510.log
+                    [pscustomobject]@{
+                        PSTypeName        = 'IISDiagnostics.W3CEntry'
+                        Timestamp         = $entryUtc.ToLocalTime()
+                        ClientIp          = $f['c-ip']
+                        ClientPort        = $clientPort
+                        ServerIp          = $f['s-ip']
+                        ServerPort        = $serverPort
+                        SiteName          = $f['s-sitename']
+                        SiteLogFolder     = $file.Directory.Name
+                        ComputerName      = $f['s-computername']
+                        Method            = $f['cs-method']
+                        UriStem           = $f['cs-uri-stem']
+                        UriQuery          = $f['cs-uri-query']
+                        HttpVersion       = $f['cs-version']
+                        Username          = $f['cs-username']
+                        Host              = $f['cs-host']
+                        UserAgent         = $f['cs(User-Agent)']
+                        Referer           = $f['cs(Referer)']
+                        StatusCode        = $scStatus
+                        SubStatus         = $subStatus
+                        Win32Status       = $win32Status
+                        IsConnectionReset = ($win32Status -eq 64)
+                        TimeTakenMs       = $timeTaken
+                        BytesSent         = $bytesSent
+                        BytesReceived     = $bytesRecv
+                        AdditionalFields  = $additional
+                        SourceFile        = "$($file.Directory.Name)\$($file.Name)"
+                    }
                 }
 
                 if ($Summarise) { $accumulated.Add($entry) }
