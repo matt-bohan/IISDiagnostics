@@ -794,7 +794,7 @@ $summary.Sites | Where-Object State -ne 'Started'
 | `AppPools` | `IISDiagnostics.ConfigSummary.AppPool[]` | One row per application pool |
 | `Sites` | `IISDiagnostics.ConfigSummary.Site[]` | One row per site |
 | `W3CLogPaths` | `IISDiagnostics.ConfigSummary.W3CLogPath[]` | Resolved W3C log directory per site |
-| `HttpErrLogPath` | string | HTTPERR log folder (first found candidate) |
+| `HttpErrLogPath` | string | First HTTPERR candidate path checked (may not exist on disk if HTTP.sys has not yet written errors; `$null` if no candidate could be determined) |
 
 **Things worth knowing:**
 

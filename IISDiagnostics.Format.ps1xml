@@ -1348,8 +1348,12 @@
             <Label>W3C log paths</Label>
             <ScriptBlock>
               ($_.W3CLogPaths | ForEach-Object {
-                  $p = if ($_.ResolvedPath) { $_.ResolvedPath } else { if ($_.RawPath) { $_.RawPath } else { '(unknown)' } }
-                  "$($_.SiteName)  ->  $p$(if (-not $_.Exists) { '  [not found]' })"
+                  $p = if ($_.ResolvedPath) { $_.ResolvedPath } else { if ($_.RawPath) { $_.RawPath } else { $null } }
+                  if ($p) {
+                      "$($_.SiteName)  ->  $p$(if (-not $_.Exists) { '  [not found]' })"
+                  } else {
+                      "$($_.SiteName)  ->  (could not determine log path)"
+                  }
               }) -join [Environment]::NewLine
             </ScriptBlock>
           </ListItem>

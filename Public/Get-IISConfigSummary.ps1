@@ -186,22 +186,32 @@ function Get-IISConfigSummary {
             $state    = try { [string]$site.State }           catch { 'Unknown' }
             $pool     = try { [string]$site.ApplicationPool } catch { $null }
 
-            # Bindings - bindingInformation is "ip:port:hostheader"
+            # Bindings - HTTP/HTTPS bindingInformation is "ip:port:hostheader".
+            # Non-TCP protocols (net.tcp, net.pipe, etc.) use different formats;
+            # use a regex match so those bindings get null IP/Port instead of
+            # garbled splits, and always record the raw binding string.
             $bindingObjects = [System.Collections.Generic.List[pscustomobject]]::new()
             try {
                 foreach ($b in @($site.Bindings.Collection)) {
-                    $proto = [string]$b.Protocol
-                    $info  = [string]$b.bindingInformation   # e.g. "*:80:" or "*:443:example.com"
-                    $parts = $info -split ':'
-                    $ip    = if ($parts.Count -ge 1 -and $parts[0]) { $parts[0] } else { '*' }
-                    $port  = if ($parts.Count -ge 2) { $parts[1] } else { '' }
-                    $host  = if ($parts.Count -ge 3) { $parts[2] } else { '' }
+                    $proto   = [string]$b.Protocol
+                    $rawInfo = [string]$b.bindingInformation
+
+                    $ip       = $null
+                    $port     = $null
+                    $hostName = $null
+
+                    if ($rawInfo -match '^([^:]*):(\d+):(.*)$') {
+                        $ip       = if ([string]::IsNullOrWhiteSpace($Matches[1])) { '*' } else { $Matches[1] }
+                        $port     = $Matches[2]
+                        $hostName = if ([string]::IsNullOrWhiteSpace($Matches[3])) { $null } else { $Matches[3] }
+                    }
 
                     $bindingObjects.Add([pscustomobject]@{
-                        Protocol = $proto
-                        IP       = $ip
-                        Port     = $port
-                        HostName = $host
+                        Protocol           = $proto
+                        IP                 = $ip
+                        Port               = $port
+                        HostName           = $hostName
+                        RawBindingInfo     = $rawInfo
                     })
                 }
             }
@@ -214,7 +224,11 @@ function Get-IISConfigSummary {
                 -Text "$siteName  (ID: $siteId)  |  $state  |  Pool: $(if ($pool) { $pool } else { '-' })"
 
             foreach ($b in $bindingObjects) {
-                $addr = "$($b.Protocol)  $($b.IP):$($b.Port)$(if ($b.HostName) { "  [$($b.HostName)]" })"
+                $addr = if ($null -ne $b.IP) {
+                    "$($b.Protocol)  $($b.IP):$($b.Port)$(if ($b.HostName) { "  [$($b.HostName)]" })"
+                } else {
+                    "$($b.Protocol)  $($b.RawBindingInfo)"
+                }
                 Write-Host "             $addr" -ForegroundColor DarkGray
             }
 
