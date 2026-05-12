@@ -756,7 +756,89 @@ Get-IISSiteSummary |
 
 ---
 
+### `Get-IISConfigSummary`
+
+Returns a quick snapshot of the IIS configuration on this server: application pools, sites,
+bindings, and key log file locations. Designed to answer "what am I dealing with?" before
+starting any investigation.
+
+```powershell
+# Console overview of everything on this server
+Get-IISConfigSummary
+
+# Capture the result for scripting
+$summary = Get-IISConfigSummary
+
+# App pools as a table
+$summary.AppPools | Format-Table
+
+# Sites with their W3C log path
+$summary.Sites | Format-Table SiteId, SiteName, State, ApplicationPool, W3CLogPath
+
+# W3C log path detail (includes Exists flag)
+$summary.W3CLogPaths | Format-Table
+
+# Stopped app pools
+$summary.AppPools | Where-Object State -ne 'Started'
+
+# Stopped sites
+$summary.Sites | Where-Object State -ne 'Started'
+```
+
+**Output:** `IISDiagnostics.ConfigSummary` with the following properties:
+
+| Property | Type | Description |
+|---|---|---|
+| `ComputerName` | string | Server name |
+| `GeneratedAt` | datetime | When the summary was collected |
+| `AppPools` | `IISDiagnostics.ConfigSummary.AppPool[]` | One row per application pool |
+| `Sites` | `IISDiagnostics.ConfigSummary.Site[]` | One row per site |
+| `W3CLogPaths` | `IISDiagnostics.ConfigSummary.W3CLogPath[]` | Resolved W3C log directory per site |
+| `HttpErrLogPath` | string | HTTPERR log folder (first found candidate) |
+
+**Things worth knowing:**
+
+- W3C log paths are resolved using the same multi-source logic as `Get-IISW3CLog`: IIS
+  drive properties, `Get-WebConfigurationProperty`, `applicationHost.config` fallback, and
+  environment variable expansion (`%SystemDrive%`, `%SystemRoot%`). The `Exists` flag on
+  each `W3CLogPaths` entry indicates whether the directory is present on disk right now.
+- The HTTPERR path is checked against the standard location
+  (`%SystemRoot%\System32\LogFiles\HTTPERR`) and any registry override under
+  `HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters\ErrorLoggingDir`.
+- Unlike `Invoke-IISDiagnosticSweep`, this cmdlet does not parse or analyse log content.
+  It is fast and safe to run at any time for inventory or orientation.
+
+---
+
 ## Investigation Recipes
+
+### What am I dealing with? (start here)
+
+Before diagnosing a problem, get the lay of the land:
+
+```powershell
+Get-IISConfigSummary
+```
+
+This prints a colour-coded overview showing app pools, sites, bindings, W3C and HTTPERR log
+locations, and a reminder about the Windows Event Log. Use it to orient yourself on any server
+before running deeper diagnostics.
+
+```powershell
+# Capture the result object for scripting
+$summary = Get-IISConfigSummary
+
+# List app pools as a table
+$summary.AppPools | Format-Table
+
+# Find stopped sites
+$summary.Sites | Where-Object State -ne 'Started'
+
+# Show all W3C log paths (useful before running Get-IISW3CLog)
+$summary.W3CLogPaths | Format-Table
+```
+
+---
 
 ### Something is wrong right now - where do I start?
 
@@ -890,7 +972,8 @@ IISDiagnostics/
 │   ├── Invoke-IISW3CLogAnalysis.ps1
 │   ├── Get-IISAppPoolStatus.ps1
 │   ├── Get-IISSiteBindingReport.ps1
-│   └── Get-IISSiteSummary.ps1
+│   ├── Get-IISSiteSummary.ps1
+│   └── Get-IISConfigSummary.ps1
 └── Private/                     Internal helpers - not exported
     ├── Assert-ElevatedSession.ps1
     ├── Assert-WebAdminModule.ps1
