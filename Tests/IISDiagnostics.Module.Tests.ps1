@@ -59,4 +59,11 @@ Describe 'IISDiagnostics module basics' {
             }
         }
     }
+
+    It 'exports Get-IISConfigSummary' {
+        $module = Get-Module IISDiagnostics
+        if (-not ($module.ExportedCommands.Keys -contains 'Get-IISConfigSummary')) {
+            throw 'Expected Get-IISConfigSummary export.'
+        }
+    }
 }

@@ -1315,5 +1315,137 @@
       </TableControl>
     </View>
 
+    <!-- ================================================================
+         IISDiagnostics.ConfigSummary
+         List view: top-level summary object returned by Get-IISConfigSummary.
+         ================================================================ -->
+    <View>
+      <Name>IISDiagnostics.ConfigSummary</Name>
+      <ViewSelectedBy><TypeName>IISDiagnostics.ConfigSummary</TypeName></ViewSelectedBy>
+      <ListControl>
+        <ListEntries><ListEntry><ListItems>
+          <ListItem><Label>Computer</Label><PropertyName>ComputerName</PropertyName></ListItem>
+          <ListItem><Label>Generated at</Label><ScriptBlock>$_.GeneratedAt.ToString('dd/MM/yyyy HH:mm:ss')</ScriptBlock></ListItem>
+          <ListItem><Label>App pools</Label><ScriptBlock>$_.AppPools.Count</ScriptBlock></ListItem>
+          <ListItem>
+            <Label>Pool states</Label>
+            <ScriptBlock>
+              ($_.AppPools | ForEach-Object {
+                  "$($_.Name)  [$($_.State)]  $($_.IdentityType)$(if ($_.UserName) { " ($($_.UserName))" })"
+              }) -join [Environment]::NewLine
+            </ScriptBlock>
+          </ListItem>
+          <ListItem><Label>Sites</Label><ScriptBlock>$_.Sites.Count</ScriptBlock></ListItem>
+          <ListItem>
+            <Label>Site states</Label>
+            <ScriptBlock>
+              ($_.Sites | ForEach-Object {
+                  "$($_.SiteName)  (ID $($_.SiteId))  [$($_.State)]  pool: $(if ($_.ApplicationPool) { $_.ApplicationPool } else { '-' })"
+              }) -join [Environment]::NewLine
+            </ScriptBlock>
+          </ListItem>
+          <ListItem>
+            <Label>W3C log paths</Label>
+            <ScriptBlock>
+              ($_.W3CLogPaths | ForEach-Object {
+                  $p = if ($_.ResolvedPath) { $_.ResolvedPath } else { if ($_.RawPath) { $_.RawPath } else { $null } }
+                  if ($p) {
+                      "$($_.SiteName)  ->  $p$(if (-not $_.Exists) { '  [not found]' })"
+                  } else {
+                      "$($_.SiteName)  ->  (could not determine log path)"
+                  }
+              }) -join [Environment]::NewLine
+            </ScriptBlock>
+          </ListItem>
+          <ListItem>
+            <Label>HTTPERR log path</Label>
+            <ScriptBlock>if ($_.HttpErrLogPath) { $_.HttpErrLogPath } else { '(unknown)' }</ScriptBlock>
+          </ListItem>
+        </ListItems></ListEntry>
+        </ListEntries>
+      </ListControl>
+    </View>
+
+    <!-- ================================================================
+         IISDiagnostics.ConfigSummary.AppPool
+         Table view for $summary.AppPools.
+         ================================================================ -->
+    <View>
+      <Name>IISDiagnostics.ConfigSummary.AppPool</Name>
+      <ViewSelectedBy><TypeName>IISDiagnostics.ConfigSummary.AppPool</TypeName></ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader><Label>Name</Label><Width>28</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>State</Label><Width>10</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Identity</Label><Width>26</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Pipeline</Label><Width>12</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Runtime</Label><Width>16</Width><Alignment>Left</Alignment></TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries><TableRowEntry><TableColumnItems>
+          <TableColumnItem><PropertyName>Name</PropertyName></TableColumnItem>
+          <TableColumnItem><PropertyName>State</PropertyName></TableColumnItem>
+          <TableColumnItem>
+            <ScriptBlock>
+              if ($_.IdentityType -eq 'SpecificUser' -and $_.UserName) {
+                  "$($_.IdentityType) ($($_.UserName))"
+              } else { $_.IdentityType }
+            </ScriptBlock>
+          </TableColumnItem>
+          <TableColumnItem><ScriptBlock>if ($_.PipelineMode) { $_.PipelineMode } else { '-' }</ScriptBlock></TableColumnItem>
+          <TableColumnItem><ScriptBlock>if ($_.RuntimeVersion) { $_.RuntimeVersion } else { '-' }</ScriptBlock></TableColumnItem>
+        </TableColumnItems></TableRowEntry></TableRowEntries>
+      </TableControl>
+    </View>
+
+    <!-- ================================================================
+         IISDiagnostics.ConfigSummary.Site
+         Table view for $summary.Sites.
+         ================================================================ -->
+    <View>
+      <Name>IISDiagnostics.ConfigSummary.Site</Name>
+      <ViewSelectedBy><TypeName>IISDiagnostics.ConfigSummary.Site</TypeName></ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader><Label>ID</Label><Width>4</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Site</Label><Width>26</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>State</Label><Width>10</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>AppPool</Label><Width>22</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Bindings</Label><Width>5</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>W3CLogPath</Label><Width>46</Width><Alignment>Left</Alignment></TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries><TableRowEntry><TableColumnItems>
+          <TableColumnItem><PropertyName>SiteId</PropertyName></TableColumnItem>
+          <TableColumnItem><PropertyName>SiteName</PropertyName></TableColumnItem>
+          <TableColumnItem><PropertyName>State</PropertyName></TableColumnItem>
+          <TableColumnItem><ScriptBlock>if ($_.ApplicationPool) { $_.ApplicationPool } else { '-' }</ScriptBlock></TableColumnItem>
+          <TableColumnItem><ScriptBlock>if ($_.Bindings) { $_.Bindings.Count } else { 0 }</ScriptBlock></TableColumnItem>
+          <TableColumnItem><ScriptBlock>if ($_.W3CLogPath) { $_.W3CLogPath } else { '-' }</ScriptBlock></TableColumnItem>
+        </TableColumnItems></TableRowEntry></TableRowEntries>
+      </TableControl>
+    </View>
+
+    <!-- ================================================================
+         IISDiagnostics.ConfigSummary.W3CLogPath
+         Table view for $summary.W3CLogPaths.
+         ================================================================ -->
+    <View>
+      <Name>IISDiagnostics.ConfigSummary.W3CLogPath</Name>
+      <ViewSelectedBy><TypeName>IISDiagnostics.ConfigSummary.W3CLogPath</TypeName></ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader><Label>ID</Label><Width>4</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Site</Label><Width>26</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Exists</Label><Width>7</Width><Alignment>Left</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>ResolvedPath</Label><Width>60</Width><Alignment>Left</Alignment></TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries><TableRowEntry><TableColumnItems>
+          <TableColumnItem><PropertyName>SiteId</PropertyName></TableColumnItem>
+          <TableColumnItem><PropertyName>SiteName</PropertyName></TableColumnItem>
+          <TableColumnItem><ScriptBlock>if ($_.Exists) { 'Yes' } else { 'No' }</ScriptBlock></TableColumnItem>
+          <TableColumnItem><ScriptBlock>if ($_.ResolvedPath) { $_.ResolvedPath } else { if ($_.RawPath) { $_.RawPath } else { '-' } }</ScriptBlock></TableColumnItem>
+        </TableColumnItems></TableRowEntry></TableRowEntries>
+      </TableControl>
+    </View>
+
   </ViewDefinitions>
 </Configuration>
