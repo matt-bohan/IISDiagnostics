@@ -31,6 +31,22 @@ function Get-IISPerformanceCounters {
             Pooled and free connections, reclaimed or stasis connections, and hard connect failures
             when the .NET SqlClient performance counters are installed.
 
+          System (host context)
+            Available physical memory and total CPU to interpret worker pressure.
+
+          .NET CLR (w3wp workers)
+            Time in GC, heap size, exception rate, and lock contention when CLR counters are present.
+
+          ASP.NET v4 (machine-wide)
+            Global request queue, rejections, wait time, and worker restarts.
+
+          ASP.NET Applications (per site / app)
+            Application queue depth and unhandled error rate for hot instances only (non-zero).
+
+    .PARAMETER Quiet
+        Suppress the colour-coded console report. The snapshot object is still returned.
+        Use for automation, logging, or when piping only the result.
+
     .PARAMETER AppPoolName
         Limit HTTP.sys queue, WAS, and worker-process measures to one application pool.
         Accepts wildcards.
@@ -50,6 +66,11 @@ function Get-IISPerformanceCounters {
         Get-IISPerformanceCounters -AppPoolName 'DefaultAppPool'
 
         Limits queue and worker-process measures to DefaultAppPool.
+
+    .EXAMPLE
+        Get-IISPerformanceCounters -Quiet
+
+        Returns only the snapshot object with no colour host report (for scripts and piping).
 
     .EXAMPLE
         $perf = Get-IISPerformanceCounters
@@ -73,7 +94,10 @@ function Get-IISPerformanceCounters {
 
         [Parameter()]
         [ValidateRange(1, 10)]
-        [int]$MaxSamples = 1
+        [int]$MaxSamples = 1,
+
+        [Parameter()]
+        [switch]$Quiet
     )
 
     Assert-ElevatedSession -CmdletName $MyInvocation.MyCommand.Name
@@ -254,6 +278,47 @@ function Get-IISPerformanceCounters {
         return 'Critical'
     }
 
+    function Test-IsWorkerClrInstance([string]$InstanceName) {
+        if ([string]::IsNullOrWhiteSpace($InstanceName)) { return $false }
+        return $InstanceName -like 'w3wp*'
+    }
+
+    function Get-AvailableMemorySeverity([double]$Megabytes) {
+        if ($Megabytes -ge 1024) { return 'OK' }
+        if ($Megabytes -ge 512) { return 'Warning' }
+        return 'Critical'
+    }
+
+    function Get-GcTimeSeverity([double]$Percent) {
+        if ($Percent -lt 10) { return 'OK' }
+        if ($Percent -lt 25) { return 'Warning' }
+        return 'Critical'
+    }
+
+    function Get-ExceptionRateSeverity([double]$PerSec) {
+        if ($PerSec -le 0) { return 'OK' }
+        if ($PerSec -lt 5) { return 'Warning' }
+        return 'Critical'
+    }
+
+    function Get-ContentionRateSeverity([double]$PerSec) {
+        if ($PerSec -le 0) { return 'OK' }
+        if ($PerSec -lt 50) { return 'Warning' }
+        return 'Critical'
+    }
+
+    function Get-AspNetGlobalQueueSeverity([double]$Queued) {
+        if ($Queued -le 0) { return 'OK' }
+        if ($Queued -lt 25) { return 'Warning' }
+        return 'Critical'
+    }
+
+    function Get-AspAppQueueSeverity([double]$Queued) {
+        if ($Queued -le 0) { return 'OK' }
+        if ($Queued -lt 10) { return 'Warning' }
+        return 'Critical'
+    }
+
     $counterSets = @{}
     foreach ($setName in @(
             'HTTP Service Request Queues',
@@ -261,6 +326,13 @@ function Get-IISPerformanceCounters {
             'Process',
             'W3SVC_W3WP',
             'Web Service',
+            'Memory',
+            'Processor',
+            '.NET CLR Memory',
+            '.NET CLR Exceptions',
+            '.NET CLR LocksAndThreads',
+            'ASP.NET v4.0.30319',
+            'ASP.NET Applications',
             '.NET Data Provider for SqlClient',
             '.NET Data Provider for SqlServer'
         )) {
@@ -686,6 +758,291 @@ function Get-IISPerformanceCounters {
             -Reason 'Web Service performance counters are not installed.'
     }
 
+    if ($counterSets.ContainsKey('Memory')) {
+        $memMap = Read-CounterMap -Paths @('\Memory\Available MBytes')
+        if ($memMap.ContainsKey('\Memory\Available MBytes')) {
+            $value = $memMap['\Memory\Available MBytes']
+            Add-Measure (New-IISPerformanceMeasure `
+                -Category 'System' -Instance '_Total' -Name 'Available physical memory' `
+                -CounterPath '\Memory\Available MBytes' `
+                -Value $value -FormattedValue ('{0:N0} MB' -f $value) -Unit 'MB' `
+                -Severity (Get-AvailableMemorySeverity $value) `
+                -WhatToExpect 'Leave headroom for the OS, SQL, and other services - not only IIS workers.' `
+                -OkGuidance 'The host still has comfortable free RAM for allocation spikes.' `
+                -WarningGuidance 'Free RAM is getting tight - workers may thrash or fail under load spikes.' `
+                -CriticalGuidance 'Very low free memory risks paging, OOM kills, and unstable IIS workers.' `
+                -RecommendedActions @(
+                    'Identify other processes consuming RAM (SQL Server, caches, other services).'
+                    'Consider more RAM, reducing worker limits, or moving workloads.'
+                ))
+        }
+    }
+
+    if ($counterSets.ContainsKey('Processor')) {
+        $procMap = Read-CounterMap -Paths @('\Processor(_Total)\% Processor Time')
+        if ($procMap.ContainsKey('\Processor(_Total)\% Processor Time')) {
+            $value = $procMap['\Processor(_Total)\% Processor Time']
+            Add-Measure (New-IISPerformanceMeasure `
+                -Category 'System' -Instance '_Total' -Name 'Host CPU' `
+                -CounterPath '\Processor(_Total)\% Processor Time' `
+                -Value $value -FormattedValue ('{0:N1}%' -f $value) -Unit 'percent' `
+                -Severity (Get-CpuSeverity $value) `
+                -WhatToExpect 'Compare host CPU with individual w3wp CPU to see whether IIS or something else dominates.' `
+                -OkGuidance 'Total machine CPU is within a normal range for this sample.' `
+                -WarningGuidance 'Host CPU is elevated - correlate with SQL, antivirus, backups, or other services.' `
+                -CriticalGuidance 'Host CPU is saturated - IIS workers compete with everything else on the box.' `
+                -RecommendedActions @('Use Task Manager or Get-Process to find non-w3wp consumers alongside worker CPU.'))
+        }
+    }
+
+    if ($counterSets.ContainsKey('.NET CLR Memory')) {
+        $clrMemPaths = @(
+            '\.NET CLR Memory(w3wp*)\% Time in GC',
+            '\.NET CLR Memory(w3wp*)\# Bytes in All Heaps'
+        )
+        $clrMemMap = Read-CounterMap -Paths $clrMemPaths
+        foreach ($path in $clrMemMap.Keys) {
+            if ($path -notmatch '\.NET CLR Memory\(([^)]+)\)\\(.+)$') { continue }
+            $clrInst = $Matches[1]
+            if (-not (Test-IsWorkerClrInstance $clrInst)) { continue }
+            $metricName = $Matches[2]
+            $value = $clrMemMap[$path]
+
+            if ($metricName -eq '% Time in GC') {
+                Add-Measure (New-IISPerformanceMeasure `
+                    -Category 'DotNetRuntime' -Instance $clrInst -Name '% Time in GC' -CounterPath $path `
+                    -Value $value -FormattedValue ('{0:N1}%' -f $value) -Unit 'percent' `
+                    -Severity (Get-GcTimeSeverity $value) `
+                    -WhatToExpect 'Sustained high % Time in GC often correlates with allocation churn or memory pressure.' `
+                    -OkGuidance 'GC overhead is low for this worker snapshot.' `
+                    -WarningGuidance 'GC is taking a noticeable slice of CPU - check allocations and large object churn.' `
+                    -CriticalGuidance 'GC overhead is very high - expect request latency spikes and CPU starvation.' `
+                    -RecommendedActions @(
+                        'Profile allocations and Gen2 / LOH growth in the application.'
+                        'Correlate with worker private bytes and Available MBytes on the host.'
+                    ))
+            }
+            elseif ($metricName -eq '# Bytes in All Heaps') {
+                Add-Measure (New-IISPerformanceMeasure `
+                    -Category 'DotNetRuntime' -Instance $clrInst -Name 'Bytes in all heaps' -CounterPath $path `
+                    -Value $value -FormattedValue (Format-PerfNumber $value 1) -Unit 'bytes' `
+                    -Severity 'Info' `
+                    -WhatToExpect 'Heap size depends on workload - watch for runaway growth between snapshots or across recycles.' `
+                    -OkGuidance 'Managed heap size snapshot for this worker.' `
+                    -WarningGuidance 'Heap growth with rising Gen2 collections suggests a leak or unbounded caches.' `
+                    -CriticalGuidance 'Very large heaps increase GC pause times and risk OOM on 32-bit workers.' `
+                    -RecommendedActions @('Compare with private bytes and investigate LOH / static caches.'))
+            }
+        }
+    }
+
+    if ($counterSets.ContainsKey('.NET CLR Exceptions')) {
+        $clrExMap = Read-CounterMap -Paths @('\.NET CLR Exceptions(w3wp*)\# of Exceps Thrown / sec')
+        foreach ($path in $clrExMap.Keys) {
+            if ($path -notmatch '\.NET CLR Exceptions\(([^)]+)\)\\') { continue }
+            $clrInst = $Matches[1]
+            if (-not (Test-IsWorkerClrInstance $clrInst)) { continue }
+            $value = $clrExMap[$path]
+            Add-Measure (New-IISPerformanceMeasure `
+                -Category 'DotNetRuntime' -Instance $clrInst -Name 'Exceptions thrown per second' -CounterPath $path `
+                -Value $value -FormattedValue ('{0:N2}/s' -f $value) -Unit 'per second' `
+                -Severity (Get-ExceptionRateSeverity $value) `
+                -WhatToExpect 'First-chance exceptions should be rare in production steady state.' `
+                -OkGuidance 'No meaningful exception throw rate observed for this worker.' `
+                -WarningGuidance 'Exceptions are being thrown frequently - often caught but still expensive.' `
+                -CriticalGuidance 'High exception rates usually indicate control-flow misuse or repeated failures.' `
+                -RecommendedActions @('Check Application log for .NET runtime errors and fix hot exception paths.'))
+        }
+    }
+
+    if ($counterSets.ContainsKey('.NET CLR LocksAndThreads')) {
+        $lockMap = Read-CounterMap -Paths @(
+            '\.NET CLR LocksAndThreads(w3wp*)\Contention Rate / sec',
+            '\.NET CLR LocksAndThreads(w3wp*)\Current Queue Length'
+        )
+        foreach ($path in $lockMap.Keys) {
+            if ($path -notmatch '\.NET CLR LocksAndThreads\(([^)]+)\)\\(.+)$') { continue }
+            $clrInst = $Matches[1]
+            if (-not (Test-IsWorkerClrInstance $clrInst)) { continue }
+            $metricName = $Matches[2]
+            $value = $lockMap[$path]
+
+            if ($metricName -eq 'Contention Rate / sec') {
+                Add-Measure (New-IISPerformanceMeasure `
+                    -Category 'DotNetRuntime' -Instance $clrInst -Name 'Lock contention rate' -CounterPath $path `
+                    -Value $value -FormattedValue ('{0:N2}/s' -f $value) -Unit 'per second' `
+                    -Severity (Get-ContentionRateSeverity $value) `
+                    -WhatToExpect 'Lock contention indicates threads waiting on Monitor locks or similar primitives.' `
+                    -OkGuidance 'Negligible managed lock contention for this worker.' `
+                    -WarningGuidance 'Contention is present - look for hot locks and synchronous shared state.' `
+                    -CriticalGuidance 'Heavy contention serializes work and inflates thread counts and latency.' `
+                    -RecommendedActions @('Review locking around caches, singletons, and static initialization.'))
+            }
+            elseif ($metricName -eq 'Current Queue Length') {
+                $severity = if ($value -le 0) { 'OK' } elseif ($value -lt 50) { 'Warning' } else { 'Critical' }
+                Add-Measure (New-IISPerformanceMeasure `
+                    -Category 'DotNetRuntime' -Instance $clrInst -Name 'Thread pool queue length' -CounterPath $path `
+                    -Value $value -FormattedValue (Format-PerfNumber $value 0) -Unit 'work items' `
+                    -Severity $severity `
+                    -WhatToExpect 'A non-zero queue means work is waiting for thread-pool threads.' `
+                    -OkGuidance 'Thread pool queue is empty - work is not backing up at the CLR scheduler.' `
+                    -WarningGuidance 'Work is queuing for thread-pool threads - often blocked workers or sync-over-async.' `
+                    -CriticalGuidance 'Thread pool queue is deep - requests will stall and IIS queues will grow.' `
+                    -RecommendedActions @('Avoid blocking async code; offload long sync work to dedicated threads.'))
+            }
+        }
+    }
+
+    if ($counterSets.ContainsKey('ASP.NET v4.0.30319')) {
+        $aspGlobalPaths = @(
+            '\ASP.NET v4.0.30319\Requests Queued',
+            '\ASP.NET v4.0.30319\Requests Rejected',
+            '\ASP.NET v4.0.30319\Request Wait Time',
+            '\ASP.NET v4.0.30319\Worker Process Restarts',
+            '\ASP.NET v4.0.30319\Requests Current'
+        )
+        $aspGlobalMap = Read-CounterMap -Paths $aspGlobalPaths
+
+        if ($aspGlobalMap.ContainsKey('\ASP.NET v4.0.30319\Requests Queued')) {
+            $value = $aspGlobalMap['\ASP.NET v4.0.30319\Requests Queued']
+            Add-Measure (New-IISPerformanceMeasure `
+                -Category 'AspNet' -Instance 'v4.0.30319' -Name 'Requests queued (global)' `
+                -CounterPath '\ASP.NET v4.0.30319\Requests Queued' `
+                -Value $value -FormattedValue (Format-PerfNumber $value 0) -Unit 'requests' `
+                -Severity (Get-AspNetGlobalQueueSeverity $value) `
+                -WhatToExpect 'The global ASP.NET queue should usually be near zero when workers keep up.' `
+                -OkGuidance 'No significant global ASP.NET queue backlog.' `
+                -WarningGuidance 'Requests are waiting in the global ASP.NET queue - workers are falling behind.' `
+                -CriticalGuidance 'Large global queue - expect 503s, high latency, and HTTP.sys queue growth.' `
+                -RecommendedActions @(
+                    'Check worker CPU, thread pool queue, and database latency.'
+                    'Review recent deployments and app pool recycle settings.'
+                ))
+        }
+
+        if ($aspGlobalMap.ContainsKey('\ASP.NET v4.0.30319\Requests Rejected')) {
+            $value = $aspGlobalMap['\ASP.NET v4.0.30319\Requests Rejected']
+            $severity = if ($value -le 0) { 'OK' } else { 'Warning' }
+            Add-Measure (New-IISPerformanceMeasure `
+                -Category 'AspNet' -Instance 'v4.0.30319' -Name 'Requests rejected (global total)' `
+                -CounterPath '\ASP.NET v4.0.30319\Requests Rejected' `
+                -Value $value -FormattedValue (Format-PerfNumber $value 0) -Unit 'requests' `
+                -Severity $severity `
+                -WhatToExpect 'Rejected requests should not increase during normal operation.' `
+                -OkGuidance 'No rejected requests recorded on the global ASP.NET counter.' `
+                -WarningGuidance 'ASP.NET has rejected requests - often overload, queue limits, or unhealthy workers.' `
+                -CriticalGuidance 'Rejections are user-visible failures - treat as incident evidence.' `
+                -RecommendedActions @('Review HTTP.sys and ASP.NET queue counters together with event logs.'))
+        }
+
+        if ($aspGlobalMap.ContainsKey('\ASP.NET v4.0.30319\Request Wait Time')) {
+            $value = $aspGlobalMap['\ASP.NET v4.0.30319\Request Wait Time']
+            Add-Measure (New-IISPerformanceMeasure `
+                -Category 'AspNet' -Instance 'v4.0.30319' -Name 'Request wait time (global)' `
+                -CounterPath '\ASP.NET v4.0.30319\Request Wait Time' `
+                -Value $value -FormattedValue ('{0:N0} ms' -f $value) -Unit 'ms' `
+                -Severity 'Info' `
+                -WhatToExpect 'Wait time semantics vary by version - compare with queue depth and worker latency.' `
+                -OkGuidance 'Snapshot of global ASP.NET reported wait time.' `
+                -WarningGuidance 'Rising wait time with queued requests indicates worker saturation.' `
+                -CriticalGuidance 'Very high wait time with queues indicates severe thread or dependency blocking.' `
+                -RecommendedActions @('Correlate with SQL, external HTTP calls, and lock contention counters.'))
+        }
+
+        if ($aspGlobalMap.ContainsKey('\ASP.NET v4.0.30319\Worker Process Restarts')) {
+            $value = $aspGlobalMap['\ASP.NET v4.0.30319\Worker Process Restarts']
+            $severity = if ($value -le 0) { 'OK' } elseif ($value -lt 5) { 'Warning' } else { 'Critical' }
+            Add-Measure (New-IISPerformanceMeasure `
+                -Category 'AspNet' -Instance 'v4.0.30319' -Name 'Worker process restarts (total)' `
+                -CounterPath '\ASP.NET v4.0.30319\Worker Process Restarts' `
+                -Value $value -FormattedValue (Format-PerfNumber $value 0) -Unit 'restarts' `
+                -Severity $severity `
+                -WhatToExpect 'Restarts should be rare outside planned recycles and deployments.' `
+                -OkGuidance 'No unusual restart count on the global counter.' `
+                -WarningGuidance 'Worker processes have restarted - correlate with WAS events and app errors.' `
+                -CriticalGuidance 'Frequent restarts indicate instability or aggressive recycling under load.' `
+                -RecommendedActions @('Inspect Application and System logs for crash signatures before each restart.'))
+        }
+
+        if ($aspGlobalMap.ContainsKey('\ASP.NET v4.0.30319\Requests Current')) {
+            $value = $aspGlobalMap['\ASP.NET v4.0.30319\Requests Current']
+            Add-Measure (New-IISPerformanceMeasure `
+                -Category 'AspNet' -Instance 'v4.0.30319' -Name 'Requests current (global)' `
+                -CounterPath '\ASP.NET v4.0.30319\Requests Current' `
+                -Value $value -FormattedValue (Format-PerfNumber $value 0) -Unit 'requests' `
+                -Severity 'Info' `
+                -WhatToExpect 'Current executing requests across ASP.NET - compare with per-worker active requests.' `
+                -OkGuidance 'Global in-flight request count snapshot.' `
+                -WarningGuidance 'High in-flight requests with queues suggests saturation.' `
+                -CriticalGuidance 'Extreme in-flight counts with errors indicate runaway concurrency or deadlocks.' `
+                -RecommendedActions @('Compare with W3SVC_W3WP Active Requests for each pool.'))
+        }
+    }
+
+    if ($counterSets.ContainsKey('ASP.NET Applications')) {
+        $aspAppMap = Read-CounterMap -Paths @(
+            '\ASP.NET Applications(*)\Requests In Application Queue',
+            '\ASP.NET Applications(*)\Errors Unhandled During Execution/Sec'
+        )
+
+        $byApp = @{}
+        foreach ($entry in $aspAppMap.GetEnumerator()) {
+            if ($entry.Key -notmatch '\\ASP.NET Applications\(([^)]+)\)\\(.+)$') { continue }
+            $appInst = $Matches[1]
+            $ctr = $Matches[2]
+            if (-not $byApp.ContainsKey($appInst)) {
+                $byApp[$appInst] = @{}
+            }
+            $byApp[$appInst][$ctr] = $entry.Value
+        }
+
+        $hotApps = foreach ($appInst in $byApp.Keys) {
+            $row = $byApp[$appInst]
+            $q = if ($row.ContainsKey('Requests In Application Queue')) {
+                [double]$row['Requests In Application Queue']
+            } else { 0 }
+            $e = if ($row.ContainsKey('Errors Unhandled During Execution/Sec')) {
+                [double]$row['Errors Unhandled During Execution/Sec']
+            } else { 0 }
+            if ($q -gt 0 -or $e -gt 0) {
+                [pscustomobject]@{ Instance = $appInst; Queue = $q; ErrorsPerSec = $e }
+            }
+        }
+
+        foreach ($row in ($hotApps | Sort-Object @{ Expression = 'Queue'; Descending = $true }, @{ Expression = 'ErrorsPerSec'; Descending = $true } | Select-Object -First 20)) {
+            $qPath = "\ASP.NET Applications($($row.Instance))\Requests In Application Queue"
+            if ($row.Queue -gt 0) {
+                Add-Measure (New-IISPerformanceMeasure `
+                    -Category 'AspNet' -Instance $row.Instance -Name 'Requests in application queue' `
+                    -CounterPath $qPath `
+                    -Value $row.Queue -FormattedValue (Format-PerfNumber $row.Queue 0) -Unit 'requests' `
+                    -Severity (Get-AspAppQueueSeverity $row.Queue) `
+                    -WhatToExpect 'Per-application queue shows requests waiting inside ASP.NET for this app path.' `
+                    -OkGuidance 'No queued requests for this application instance.' `
+                    -WarningGuidance 'Requests are piling up inside this ASP.NET application queue.' `
+                    -CriticalGuidance 'Deep per-app queue - this app is the bottleneck within the worker.' `
+                    -RecommendedActions @(
+                        'Profile slow pages, database calls, and session state for this application.'
+                        'Compare with HTTP.sys queue and global ASP.NET queue counters.'
+                    ))
+            }
+
+            if ($row.ErrorsPerSec -gt 0) {
+                $ePath = "\ASP.NET Applications($($row.Instance))\Errors Unhandled During Execution/Sec"
+                Add-Measure (New-IISPerformanceMeasure `
+                    -Category 'AspNet' -Instance $row.Instance -Name 'Unhandled exceptions per second' `
+                    -CounterPath $ePath `
+                    -Value $row.ErrorsPerSec -FormattedValue ('{0:N2}/s' -f $row.ErrorsPerSec) -Unit 'per second' `
+                    -Severity (Get-ExceptionRateSeverity $row.ErrorsPerSec) `
+                    -WhatToExpect 'Unhandled exception rate should be zero in production.' `
+                    -OkGuidance 'No unhandled exception rate reported for this application instance.' `
+                    -WarningGuidance 'Unhandled exceptions are occurring in this application.' `
+                    -CriticalGuidance 'Unhandled exceptions are frequent - users see errors and workers may recycle.' `
+                    -RecommendedActions @('Review Application log and failed request tracing for this app path.'))
+            }
+        }
+    }
+
     $sqlSetName = if ($counterSets.ContainsKey('.NET Data Provider for SqlClient')) {
         '.NET Data Provider for SqlClient'
     } elseif ($counterSets.ContainsKey('.NET Data Provider for SqlServer')) {
@@ -805,7 +1162,7 @@ function Get-IISPerformanceCounters {
         default { 'Healthy' }
     }
 
-    [pscustomobject]@{
+    $snapshot = [pscustomobject]@{
         PSTypeName            = 'IISDiagnostics.PerformanceCounterSnapshot'
         GeneratedAt           = Get-Date
         ComputerName          = $env:COMPUTERNAME
@@ -815,4 +1172,10 @@ function Get-IISPerformanceCounters {
         Measures              = @($measures | Sort-Object Category, Instance, Name)
         Findings              = @($findings | Sort-Object SeverityRank -Descending)
     }
+
+    if (-not $Quiet) {
+        Write-IISPerformanceCounterConsoleReport -Snapshot $snapshot
+    }
+
+    return $snapshot
 }

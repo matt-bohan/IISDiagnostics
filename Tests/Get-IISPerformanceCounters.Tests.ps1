@@ -62,7 +62,7 @@ Describe 'Get-IISPerformanceCounters' {
                 }
             }
 
-            $result = Get-IISPerformanceCounters -AppPoolName 'DefaultAppPool'
+            $result = Get-IISPerformanceCounters -AppPoolName 'DefaultAppPool' -Quiet
 
             if ($result.PSObject.TypeNames[0] -ne 'IISDiagnostics.PerformanceCounterSnapshot') {
                 throw "Expected IISDiagnostics.PerformanceCounterSnapshot, got '$($result.PSObject.TypeNames[0])'."
@@ -111,6 +111,49 @@ Describe 'Get-IISPerformanceCounters' {
             if (($detail | Select-String -Pattern 'Pool size is informational\.' -AllMatches).Matches.Count -ne 1) {
                 throw "Expected WhatToExpect text once in detail, got '$detail'."
             }
+        }
+    }
+
+    It 'does not invoke console report when -Quiet is set' {
+        InModuleScope IISDiagnostics {
+            Mock Assert-ElevatedSession {}
+            Mock Write-IISPerformanceCounterConsoleReport { throw 'Write-IISPerformanceCounterConsoleReport should not be called when -Quiet' }
+
+            Mock Get-Counter {
+                param([string[]]$Counter, [string]$ListSet, [int]$SampleInterval, [int]$MaxSamples)
+                if ($ListSet) {
+                    return [pscustomobject]@{
+                        CounterSetName = $ListSet
+                        Counter        = @()
+                    }
+                }
+                return [pscustomobject]@{ CounterSamples = @() }
+            }
+
+            $null = Get-IISPerformanceCounters -Quiet
+        }
+    }
+
+    It 'Write-IISPerformanceCounterConsoleReport completes for a synthetic snapshot' {
+        InModuleScope IISDiagnostics {
+            $snap = [pscustomobject]@{
+                PSTypeName      = 'IISDiagnostics.PerformanceCounterSnapshot'
+                ComputerName    = 'TEST'
+                GeneratedAt     = Get-Date
+                MaxSamples      = 1
+                SampleIntervalSeconds = 1
+                OverallSeverity = 'Healthy'
+                Measures        = @(
+                    [pscustomobject]@{
+                        Category = 'HttpSys'; Instance = 'P1'; Name = 'Current queue size'
+                        FormattedValue = '0'; Severity = 'OK'; SeverityRank = 1
+                        StatusSummary = 'OK'; WhatToExpect = 'expect'; OkGuidance = 'ok'
+                        RecommendedActions = @()
+                    }
+                )
+                Findings        = @()
+            }
+            Write-IISPerformanceCounterConsoleReport -Snapshot $snap
         }
     }
 }

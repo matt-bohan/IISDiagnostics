@@ -506,7 +506,7 @@ function Invoke-IISDiagnosticSweep {
     if (-not $SkipPerformanceCounters) {
         try {
             Write-Progress -Activity 'IIS Diagnostic Sweep' -Status 'Sampling performance counters...' -PercentComplete 95
-            $perfParams = @{ Verbose = $false; ErrorAction = 'Stop' }
+            $perfParams = @{ Verbose = $false; ErrorAction = 'Stop'; Quiet = $true }
             if ($siteFilter) { $perfParams['AppPoolName'] = $siteFilter }
             $performanceCounters = Get-IISPerformanceCounters @perfParams
         }

@@ -47,7 +47,8 @@ Describe 'New-SweepHtmlReport' {
             $html = New-SweepHtmlReport `
                 -ComputerName 'X' -GeneratedAt (Get-Date) -StartTime (Get-Date) -EndTime (Get-Date) `
                 -OverallSeverity 'Warning' -Findings @($finding) -HttpErrAnalysis $null -W3CAnalysis $null `
-                -AppPools @() -SiteConfigurations @() -SiteSummary @() -EventLog @() -CollectionErrors @()
+                -AppPools @() -SiteConfigurations @() -SiteSummary @() -EventLog @() -PerformanceCounters $null `
+                -CollectionErrors @()
 
             if ($html -match '<script>') { throw 'Script tag should be HTML-escaped, not left raw.' }
             if ($html -notmatch '&lt;script&gt;') { throw 'Expected escaped script tag in HTML.' }
