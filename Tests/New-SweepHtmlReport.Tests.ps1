@@ -24,6 +24,7 @@ Describe 'New-SweepHtmlReport' {
                 -SiteConfigurations @() `
                 -SiteSummary      @() `
                 -EventLog         @() `
+                -PerformanceCounters $null `
                 -CollectionErrors @()
 
             if ($html -notmatch '<!DOCTYPE html>') { throw 'Expected HTML to start with DOCTYPE.' }
