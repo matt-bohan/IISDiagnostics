@@ -9,7 +9,7 @@ function Invoke-IISW3CLogAnalysis {
     .DESCRIPTION
         Aggregates W3C log entries in a single pass, groups by sc-status and sc-substatus
         combination, and looks up each combination in the module's StatusCodes.json data
-        (the same data used by Get-IISStatusHelp).
+        (the same data used by Get-IISStatusCodeHelp).
 
         For each group the output includes:
 
@@ -25,7 +25,7 @@ function Invoke-IISW3CLogAnalysis {
             Title, Description, ServerAdminConcern, ApplicationSupportConcern.
             The substatus entry is tried first; the parent status code is the fallback.
             IsKnown is false when neither lookup has data - the raw code is shown
-            and Get-IISStatusHelp is suggested for further research.
+            and Get-IISStatusCodeHelp is suggested for further research.
 
           Top URIs and clients for this status group
             The five most frequent URI stems and client IPs producing this code.

@@ -52,7 +52,7 @@ Describe 'IISDiagnostics module basics' {
                 'Invoke-IISW3CLogAnalysis',
                 'Get-IISEventLog',
                 'Get-IISAppPoolStatus',
-                'Get-IISW3CLog'
+                'Get-IISPerformanceCounters'
             )) {
             if (-not ($module.ExportedCommands.Keys -contains $cmd)) {
                 throw "Expected export: $cmd"

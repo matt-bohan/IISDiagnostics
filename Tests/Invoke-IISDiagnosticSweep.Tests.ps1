@@ -41,6 +41,14 @@ Describe 'Invoke-IISDiagnosticSweep' {
             Mock Get-IISSiteConfiguration { @() }
             Mock Get-IISSiteSummary       { @() }
             Mock Get-IISEventLog          { @() }
+            Mock Get-IISPerformanceCounters {
+                [pscustomobject]@{
+                    PSTypeName      = 'IISDiagnostics.PerformanceCounterSnapshot'
+                    OverallSeverity = 'Healthy'
+                    Measures        = @()
+                    Findings        = @()
+                }
+            }
 
             $reportPath = Join-Path $TestDrive 'sweep-test.html'
             $result = Invoke-IISDiagnosticSweep `

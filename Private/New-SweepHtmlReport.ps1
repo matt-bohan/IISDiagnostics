@@ -20,6 +20,7 @@ function New-SweepHtmlReport {
         [psobject[]]$SiteConfigurations,
         [psobject[]]$SiteSummary,
         [psobject[]]$EventLog,
+        [psobject]$PerformanceCounters,
         [string[]]$CollectionErrors
     )
 
@@ -142,6 +143,27 @@ function New-SweepHtmlReport {
         $eventRows = "<tr><td colspan='4' class='empty'>No significant events in this window</td></tr>"
     }
 
+    # ── Performance counters table ───────────────────────────────────────
+    $perfRows = ''
+    if ($PerformanceCounters -and $PerformanceCounters.Measures) {
+        $perfRows = ($PerformanceCounters.Measures |
+            Sort-Object @{ Expression = 'SeverityRank'; Descending = $true }, Category, Instance, Name |
+            ForEach-Object {
+                $sev = $_.Severity.ToLower()
+                if ($sev -eq 'healthy') { $sev = 'ok' }
+                $instance = if ($_.Instance) { e $_.Instance } else { '-' }
+                $guidance = e $_.StatusSummary
+                $expect = if ($_.WhatToExpect) { "<div class='detail'>$(e $_.WhatToExpect)</div>" } else { '' }
+                $actions = if ($_.RecommendedActions) {
+                    '<ul class="actions">' + (($_.RecommendedActions | ForEach-Object { "<li>$(e $_)</li>" }) -join '') + '</ul>'
+                } else { '' }
+                "<tr><td>$(badge $sev)</td><td><span class='source'>$(e $_.Category)</span></td><td>$instance</td><td><strong>$(e $_.Name)</strong><div class='detail'>$(e $_.FormattedValue)</div>$expect<div class='detail'>$guidance</div>$actions</td></tr>"
+            }) -join "`n"
+    }
+    if (-not $perfRows) {
+        $perfRows = "<tr><td colspan='4' class='empty'>Performance counter data not available or skipped</td></tr>"
+    }
+
     # ── W3C status group table ────────────────────────────────────────────
     $w3cRows = ''
     if ($W3CAnalysis -and $W3CAnalysis.Groups) {
@@ -167,6 +189,9 @@ function New-SweepHtmlReport {
     $missingPaths   = if ($SiteConfigurations) { ($SiteConfigurations | Where-Object { $_.PhysicalPathStatus -eq 'Missing' }).Count } else { 'N/A' }
     $expiringCerts  = if ($SiteSummary) { ($SiteSummary | Where-Object { $_.WorstCertStatus -in 'Expired','ExpiringSoon' }).Count } else { 'N/A' }
     $sigEvents      = if ($EventLog) { $EventLog.Count } else { 'N/A' }
+    $perfIssues     = if ($PerformanceCounters -and $PerformanceCounters.Measures) {
+        ($PerformanceCounters.Measures | Where-Object { $_.SeverityRank -ge 3 }).Count
+    } else { 'N/A' }
 
     $critCount = ($Findings | Where-Object Severity -eq 'Critical').Count
     $warnCount = ($Findings | Where-Object Severity -eq 'Warning').Count
@@ -288,6 +313,10 @@ code{font-family:var(--mono);font-size:12px;background:rgba(255,255,255,.06);pad
     <div class="val$(if ($sigEvents -ne 'N/A' -and $sigEvents -gt 0){' warning'}else{' ok'})">$sigEvents</div>
     <div class="lbl">Sig. events</div>
   </div>
+  <div class="metric">
+    <div class="val$(if ($perfIssues -ne 'N/A' -and $perfIssues -gt 0){' warning'}else{' ok'})">$perfIssues</div>
+    <div class="lbl">Perf issues</div>
+  </div>
 </div>
 
 <div class="main">
@@ -336,6 +365,15 @@ $findingRows
     <table>
       <thead><tr><th>Site</th><th>Status</th><th>Expiry</th><th>Subject</th></tr></thead>
       <tbody>$certRows</tbody>
+    </table>
+  </details>
+
+  <!-- Performance counters -->
+  <details class="section" open>
+    <summary>Performance counters</summary>
+    <table>
+      <thead><tr><th>Severity</th><th>Category</th><th>Instance</th><th>Measure</th></tr></thead>
+      <tbody>$perfRows</tbody>
     </table>
   </details>
 

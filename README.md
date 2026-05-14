@@ -25,9 +25,10 @@ The module has a single main purpose:
 |---|---|
 | PowerShell | 5.1 or later |
 | OS | Windows Server (IIS installed) |
-| Elevation | Administrator session required for all cmdlets except `Get-IISStatusHelp` |
-| WebAdministration | Required for `Get-IISAppPool`, `Get-IISSiteBinding`, `Get-IISSiteSummary`, and `-SiteName` resolution in log cmdlets. Installed with the IIS Management tools feature. |
-| ActiveDirectory module | Optional. Enhances `Get-IISAppPool` with password expiry data. Falls back to ADSI if not present. |
+| Elevation | Administrator session required for all cmdlets except `Get-IISStatusCodeHelp` |
+| WebAdministration | Required for `Get-IISAppPoolStatus`, `Get-IISSiteBindingReport`, `Get-IISSiteSummary`, `Get-IISSiteConfiguration`, and `-SiteName` resolution in log cmdlets. Installed with the IIS Management tools feature. |
+| ActiveDirectory module | Optional. Enhances `Get-IISAppPoolStatus` with password expiry data. Falls back to ADSI if not present. |
+| Performance counters | `Get-IISPerformanceCounters` and sweep step 7 use `Get-Counter`. Extra sets (for example ASP.NET, .NET CLR, SqlClient pooling) only appear when the matching IIS or .NET features are installed and the workload has created instances. |
 
 **Installing the WebAdministration module** (if not already present):
 
@@ -86,7 +87,13 @@ Invoke-IISHttpErrAnalysis
 Invoke-IISW3CLogAnalysis -ErrorsOnly | Format-Table StatusKey, Count, Title
 
 # Are all app pools running? Are any service accounts locked out?
-Get-IISAppPool
+Get-IISAppPoolStatus
+
+# Live performance snapshot (HTTP.sys queues, w3wp, ASP.NET, CLR, host memory, SqlClient when present)
+Get-IISPerformanceCounters
+
+# Full orchestrated sweep with optional HTML report (same window for logs + perf counters)
+Invoke-IISDiagnosticSweep -ReportPath .\sweep.html
 
 # Certificate health across all sites
 Get-IISSiteSummary | Sort-Object NearestExpiryDays | Format-Table
@@ -97,7 +104,7 @@ Get-IISSiteSummary | Sort-Object NearestExpiryDays | Format-Table
 
 ## Cmdlets
 
-### `Get-IISStatusHelp`
+### `Get-IISStatusCodeHelp`
 
 Looks up curated descriptions and remediation guidance for an HTTP status code or IIS
 substatus combination, using the module's built-in `StatusCodes.json` data.
@@ -106,17 +113,17 @@ substatus combination, using the module's built-in `StatusCodes.json` data.
 
 ```powershell
 # Plain status code
-Get-IISStatusHelp 503
+Get-IISStatusCodeHelp 503
 
 # IIS substatus - must be quoted (unquoted 500.30 becomes the float 500.3)
-Get-IISStatusHelp '403.16'
+Get-IISStatusCodeHelp '403.16'
 
 # Alternative syntax
-Get-IISStatusHelp 403 -Substatus 16
+Get-IISStatusCodeHelp 403 -Substatus 16
 
 # Pipe from a W3C analysis
 (Invoke-IISW3CLogAnalysis).ErrorGroups | ForEach-Object {
-    Get-IISStatusHelp $_.StatusKey
+    Get-IISStatusCodeHelp $_.StatusKey
 }
 ```
 
@@ -239,7 +246,7 @@ Invoke-IISHttpErrAnalysis -BurstWindowMinutes 10 -BurstThreshold 3
 - `-BurstWindowMinutes` and `-BurstThreshold` tune the burst detection. On a low-traffic site,
   five events in five minutes may represent the entire load - increase these parameters to avoid
   false-positive burst detection.
-- `$result.Findings` is a structured array - suitable for feeding into scripts or the upcoming
+- `$result.Findings` is a structured array - suitable for feeding into scripts or
   `Invoke-IISDiagnosticSweep`.
 
 ---
@@ -303,7 +310,7 @@ Get-IISW3CLog -Summarise -SlowThresholdMs 2000
   logging field set and must be explicitly enabled by an administrator.
 - The W3SVC number in the folder name corresponds directly to the IIS site ID. `W3SVC3` = site
   ID 3. This lets you cross-reference with `Get-IISSiteBinding -SiteId 3` or
-  `Get-IISAppPool`.
+  `Get-IISAppPoolStatus`.
 - Log files are pre-filtered by date extracted from the filename (`u_ex260510.log` → 10 May 2026)
   before being opened, avoiding parsing of files outside the window. Non-standard filenames
   fall back to `LastWriteTime` pre-filtering.
@@ -324,7 +331,7 @@ Get-IISW3CLog -Summarise -SlowThresholdMs 2000
 
 Groups W3C log entries by `sc-status` + `sc-substatus` and enriches each group with curated
 descriptions from the module's `StatusCodes.json` data (the same data used by
-`Get-IISStatusHelp`).
+`Get-IISStatusCodeHelp`).
 
 ```powershell
 # Default - last hour, all status codes
@@ -375,7 +382,7 @@ title, description, likely causes, things to check, top URIs, and top client IPs
   `Substatus` or `HttpCode`. When the fallback is used, a note is appended to the description
   so you know the text is for the parent code, not the specific substatus.
 - `IsKnown = $false` means neither lookup found data. The group is still returned - see
-  `UnknownGroups` on the analysis object to collect them. Run `Get-IISStatusHelp` on
+  `UnknownGroups` on the analysis object to collect them. Run `Get-IISStatusCodeHelp` on
   unknown codes and consider adding them to `StatusCodes.json`.
 - Each group's `TopUris` and `TopClients` show the five most frequent URI stems and client IPs
   for *that specific status code*, not the overall top. A 403.16 from one URI and one client IP
@@ -756,6 +763,90 @@ Get-IISSiteSummary |
 
 ---
 
+### `Get-IISPerformanceCounters`
+
+Samples Windows performance counters that matter for IIS health (HTTP.sys request queues,
+WAS application pools, `w3wp` CPU and threads, `W3SVC_W3WP` pipeline metrics, web service
+connections, host memory and total CPU, .NET CLR and ASP.NET where available, and SqlClient
+connection pooling when those counters are registered). Each reading is graded with
+severity, short operator guidance, and suggested next steps.
+
+By default the cmdlet prints a **colour-coded console report** (same visual language as
+`Get-IISConfigSummary`). Use **`-Quiet`** to return only the snapshot object (no host output),
+which is what `Invoke-IISDiagnosticSweep` uses internally so the sweep does not print the
+full counter report twice.
+
+```powershell
+# Interactive snapshot with coloured sections (default)
+Get-IISPerformanceCounters
+
+# One pool (wildcards supported) - limits queue, WAS, and worker-related rows
+Get-IISPerformanceCounters -AppPoolName 'DefaultAppPool'
+
+# Automation: object only, no host banner
+$perf = Get-IISPerformanceCounters -Quiet
+
+# Tabular triage (default format view also applies to Measures when expanded)
+$perf.Measures | Where-Object Severity -ne 'OK' | Format-Table Category, Severity, Instance, Name, FormattedValue, StatusSummary
+```
+
+**Output:** `IISDiagnostics.PerformanceCounterSnapshot` with `Measures` (`IISDiagnostics.PerformanceMeasure[]`),
+`Findings` (non-OK measures promoted for scripting), `OverallSeverity`, and sampling metadata.
+
+**Things worth knowing:**
+
+- Requires an **elevated** session (same as other operational cmdlets in this module).
+- Missing counter sets are surfaced as **Info** measures rather than failing the whole run.
+- **`-SampleIntervalSeconds`** and **`-MaxSamples`** are passed through to `Get-Counter` when you
+  want a longer average than a single point-in-time sample.
+
+---
+
+### `Invoke-IISDiagnosticSweep`
+
+Runs the full diagnostic pipeline in one command: HTTPERR analysis, W3C log analysis,
+application pool status, site configuration, site summary (certificates), significant event
+log entries, and a **live performance counter snapshot** via `Get-IISPerformanceCounters`
+(called with **`-Quiet`** so only the sweep’s own summary lines appear for that step; run
+`Get-IISPerformanceCounters` on its own for the full coloured counter report).
+
+```powershell
+# Last hour, colour output only
+Invoke-IISDiagnosticSweep
+
+# Wider log window (HTTPERR, W3C, and event log share the same range)
+Invoke-IISDiagnosticSweep -LastHours 4
+
+# HTML report plus optional browser
+Invoke-IISDiagnosticSweep -ReportPath C:\Reports\sweep.html -OpenReport
+
+# Skip heavy sections
+Invoke-IISDiagnosticSweep -SkipW3C -SkipEventLog
+
+# Skip performance counters only
+Invoke-IISDiagnosticSweep -SkipPerformanceCounters
+
+# Scripting: capture findings and raw components
+$result = Invoke-IISDiagnosticSweep
+$result.Findings | Where-Object Severity -eq 'Critical'
+$result.PerformanceCounters.Measures | Format-Table
+```
+
+**Output:** `IISDiagnostics.SweepResult` including `Findings`, `HttpErrAnalysis`, `W3CAnalysis`,
+`AppPools`, `SiteConfigurations`, `SiteSummary`, `EventLog`, **`PerformanceCounters`**, and
+`ReportPath` when `-ReportPath` was supplied. HTML reports include a **Performance counters**
+section and a **Perf issues** summary tile derived from measure severities.
+
+**Things worth knowing:**
+
+- **`-SiteName`** narrows log analysis and several configuration checks to one site; the
+  performance snapshot passes the same value as **`-AppPoolName`** to
+  `Get-IISPerformanceCounters` when filtering worker and queue rows by pool.
+- Components that fail (for example WebAdministration not installed) are recorded in
+  `CollectionErrors` and the rest of the sweep still runs.
+
+---
+
 ### `Get-IISConfigSummary`
 
 Returns a quick snapshot of the IIS configuration on this server: application pools, sites,
@@ -854,6 +945,12 @@ Invoke-IISW3CLogAnalysis -ErrorsOnly
 
 # 4. Are there connection resets suggesting a mid-request crash?
 Get-IISW3CLog | Where-Object IsConnectionReset | Select-Object Timestamp, UriStem, TimeTakenMs
+
+# 5. Live queues, CPU, threads, ASP.NET / CLR / SqlClient (when counters exist)
+Get-IISPerformanceCounters
+
+# Or run everything at once (optional HTML)
+Invoke-IISDiagnosticSweep -ReportPath .\sweep-$(Get-Date -f yyyyMMdd-HHmm).html
 ```
 
 ### App pool crash investigation
@@ -961,27 +1058,42 @@ Invoke-IISHttpErrAnalysis |
 IISDiagnostics/
 ├── IISDiagnostics.psd1          Module manifest
 ├── IISDiagnostics.psm1          Loader - dot-sources Public/* and Private/*
-├── IISDiagnostics_Format.ps1xml Display formatting for all output types
+├── IISDiagnostics.Format.ps1xml Display formatting for output types
 ├── Data/
 │   └── StatusCodes.json         Status code and substatus descriptions
 ├── Public/                      Exported cmdlets (one file per cmdlet)
-│   ├── Get-IISStatusHelp.ps1
-│   ├── Get-IISHttpErrLog.ps1
-│   ├── Invoke-IISHttpErrAnalysis.ps1
-│   ├── Get-IISW3CLog.ps1
-│   ├── Invoke-IISW3CLogAnalysis.ps1
 │   ├── Get-IISAppPoolStatus.ps1
+│   ├── Get-IISConfigSummary.ps1
+│   ├── Get-IISHttpErrLog.ps1
+│   ├── Get-IISPerformanceCounters.ps1
+│   ├── Get-IISStatusCodeHelp.ps1
+│   ├── Get-IISW3CLog.ps1
+│   ├── Get-IISEventLog.ps1
 │   ├── Get-IISSiteBindingReport.ps1
+│   ├── Get-IISSiteConfiguration.ps1
 │   ├── Get-IISSiteSummary.ps1
-│   └── Get-IISConfigSummary.ps1
+│   ├── Invoke-IISDiagnosticSweep.ps1
+│   ├── Invoke-IISHttpErrAnalysis.ps1
+│   └── Invoke-IISW3CLogAnalysis.ps1
 └── Private/                     Internal helpers - not exported
     ├── Assert-ElevatedSession.ps1
     ├── Assert-WebAdminModule.ps1
-    ├── Test-DomainAccountStatus.ps1
-    ├── Initialize-StatusData.ps1
     ├── ConvertTo-StatusResult.ps1
+    ├── Expand-IISDiagnosticsLogPath.ps1
     ├── Format-NumberedLines.ps1
-    └── Get-UnknownStatusGuidance.ps1
+    ├── Get-HttpEntry.ps1
+    ├── Get-IISSiteBinding.ps1
+    ├── Get-PathPermissionsForIdentity.ps1
+    ├── Get-SubstatusEntry.ps1
+    ├── Get-UnknownStatusGuidance.ps1
+    ├── Initialize-StatusData.ps1
+    ├── New-IISPerformanceMeasure.ps1
+    ├── New-SweepHtmlReport.ps1
+    ├── Read-IISW3CLogAnalysis.ps1
+    ├── Resolve-IISW3CLogReadTargets.ps1
+    ├── Select-IISW3CLogFiles.ps1
+    ├── Test-DomainAccountStatus.ps1
+    └── Write-IISPerformanceCounterConsoleReport.ps1
 ```
 
 Adding a new cmdlet: create a `.ps1` file in `Public\` and the loader picks it up
@@ -993,7 +1105,7 @@ automatically. No manifest edit required - `FunctionsToExport = '*'` in the `.ps
 
 | Type | Produced by | Format-List |
 |---|---|---|
-| `IISDiagnostics.StatusHelp` | `Get-IISStatusHelp` | `IISDiagnostics.StatusHelp` |
+| `IISDiagnostics.StatusHelp` | `Get-IISStatusCodeHelp` | `IISDiagnostics.StatusHelp` |
 | `IISDiagnostics.HttpErrEntry` | `Get-IISHttpErrLog` | `IISDiagnostics.HttpErrEntry.Detail` |
 | `IISDiagnostics.HttpErrSummary` | `Get-IISHttpErrLog -Summarise` | - |
 | `IISDiagnostics.HttpErrAnalysis` | `Invoke-IISHttpErrAnalysis` | - |
@@ -1005,8 +1117,12 @@ automatically. No manifest edit required - `FunctionsToExport = '*'` in the `.ps
 | `IISDiagnostics.AppPoolStatus` | `Get-IISAppPoolStatus` | `IISDiagnostics.AppPoolStatus.Detail` |
 | `IISDiagnostics.SiteBinding` | `Get-IISSiteBindingReport` | `IISDiagnostics.SiteBinding.Detail` |
 | `IISDiagnostics.SiteSummary` | `Get-IISSiteSummary` | `IISDiagnostics.SiteSummary.Detail` |
+| `IISDiagnostics.PerformanceCounterSnapshot` | `Get-IISPerformanceCounters` | List view on snapshot; table on `Measures` |
+| `IISDiagnostics.PerformanceMeasure` | `$perf.Measures` | `IISDiagnostics.PerformanceMeasure` |
+| `IISDiagnostics.SweepResult` | `Invoke-IISDiagnosticSweep` | List view on result object |
+| `IISDiagnostics.SweepFinding` | `$sweep.Findings` | `IISDiagnostics.SweepFinding` |
 
-All types are registered in `IISDiagnostics_Format.ps1xml`. The default table view is optimised
+All types are registered in `IISDiagnostics.Format.ps1xml`. The default table view is optimised
 for triage. `Format-List` (where a detail view is defined) shows the full enrichment including
 descriptions, causes, and notices.
 
@@ -1037,7 +1153,7 @@ Pull requests welcome. When adding a new cmdlet:
 
 1. One `.ps1` file in `Public\`, named after the cmdlet
 2. Output objects use `PSTypeName` for type registration
-3. Add format views to `IISDiagnostics_Format.ps1xml` - default table for triage, detail list
+3. Add format views to `IISDiagnostics.Format.ps1xml` - default table for triage, detail list
    for `Format-List`
 4. Pre-rendered display strings (e.g. `TopUrisDisplay`) follow the existing pattern for complex
    nested data - avoids scriptblock complexity in the format XML

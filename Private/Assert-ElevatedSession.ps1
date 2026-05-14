@@ -10,7 +10,7 @@ function Assert-ElevatedSession {
         querying WebAdministration, inspecting the certificate store. Call this at the top
         of any public cmdlet that touches those resources.
 
-        Get-IISStatusHelp is the only cmdlet that does not need elevation (JSON file read only).
+        Get-IISStatusCodeHelp is the only cmdlet that does not need elevation (JSON file read only).
 
     .PARAMETER CmdletName
         Name of the calling cmdlet, included in the error message so the user knows

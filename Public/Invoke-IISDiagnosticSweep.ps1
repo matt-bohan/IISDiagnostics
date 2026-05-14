@@ -16,6 +16,7 @@ function Invoke-IISDiagnosticSweep {
           4. Site configuration             (Get-IISSiteConfiguration)
           5. Site bindings and certificates (Get-IISSiteSummary)
           6. Windows Event Log              (Get-IISEventLog -Significant)
+          7. Performance counters           (Get-IISPerformanceCounters)
 
         Each component is run inside a try/catch - if one fails (e.g. WebAdministration
         not installed) the others continue and the failure is reported at the end.
@@ -57,6 +58,9 @@ function Invoke-IISDiagnosticSweep {
 
     .PARAMETER SkipEventLog
         Skip the Windows Event Log query.
+
+    .PARAMETER SkipPerformanceCounters
+        Skip the live performance counter snapshot.
 
     .PARAMETER SkipPermissionCheck
         Skip ACL checks in Get-IISSiteConfiguration. Useful when the app pool
@@ -107,6 +111,7 @@ function Invoke-IISDiagnosticSweep {
         [Parameter()] [switch]$OpenReport,
         [Parameter()] [switch]$SkipW3C,
         [Parameter()] [switch]$SkipEventLog,
+        [Parameter()] [switch]$SkipPerformanceCounters,
         [Parameter()] [switch]$SkipPermissionCheck
     )
 
@@ -494,6 +499,53 @@ function Invoke-IISDiagnosticSweep {
         Write-Item -Severity 'OK' -Text 'No significant events in this window'
     }
 
+    # ══════════════════════════════════════════════════════════════════════
+    # 7. Performance counters
+    # ══════════════════════════════════════════════════════════════════════
+    $performanceCounters = $null
+    if (-not $SkipPerformanceCounters) {
+        try {
+            Write-Progress -Activity 'IIS Diagnostic Sweep' -Status 'Sampling performance counters...' -PercentComplete 95
+            $perfParams = @{ Verbose = $false; ErrorAction = 'Stop'; Quiet = $true }
+            if ($siteFilter) { $perfParams['AppPoolName'] = $siteFilter }
+            $performanceCounters = Get-IISPerformanceCounters @perfParams
+        }
+        catch { $collectionErrors.Add("Performance counters: $($_.Exception.Message)") }
+    }
+
+    Write-Section 'PERFORMANCE COUNTERS'
+    if ($SkipPerformanceCounters) {
+        Write-Item -Severity 'Info' -Text 'Skipped (-SkipPerformanceCounters)'
+    }
+    elseif ($performanceCounters) {
+        $significantMeasures = @($performanceCounters.Measures | Where-Object { $_.SeverityRank -ge 3 })
+        if ($significantMeasures.Count -eq 0) {
+            Write-Item -Severity 'OK' -Text "No performance counter thresholds exceeded ($($performanceCounters.Measures.Count) measures sampled)"
+        }
+        else {
+            foreach ($measure in ($significantMeasures | Sort-Object SeverityRank -Descending | Select-Object -First 12)) {
+                $instance = if ($measure.Instance) { "  *  $($measure.Instance)" } else { '' }
+                Write-Item -Severity $measure.Severity -Text "$($measure.Name)$instance  =  $($measure.FormattedValue)" `
+                    -Actions ($measure.RecommendedActions | Select-Object -First 2)
+                Add-Finding -Severity $measure.Severity -Source 'Performance' `
+                            -Title  "$($measure.Category) - $($measure.Name)$(if ($measure.Instance) { " ($($measure.Instance))" })" `
+                            -Detail "$($measure.FormattedValue). $($measure.StatusSummary)" `
+                            -Actions $measure.RecommendedActions
+            }
+            if ($significantMeasures.Count -gt 12) {
+                Write-Host "           ... and $($significantMeasures.Count - 12) more - run Get-IISPerformanceCounters for full detail" -ForegroundColor DarkGray
+            }
+        }
+
+        $infoMeasures = @($performanceCounters.Measures | Where-Object { $_.Severity -eq 'Info' })
+        if ($infoMeasures.Count -gt 0) {
+            Write-Item -Severity 'Info' -Text "$($infoMeasures.Count) informational counter measure(s) - run Get-IISPerformanceCounters for full detail"
+        }
+    }
+    else {
+        Write-Item -Severity 'Info' -Text 'Performance counter data not available'
+    }
+
     Write-Progress -Activity 'IIS Diagnostic Sweep' -Completed
 
     # ── Footer ──────────────────────────────────────────────────────────
@@ -547,6 +599,7 @@ function Invoke-IISDiagnosticSweep {
                 -SiteConfigurations $siteConfigs `
                 -SiteSummary       $siteSummary `
                 -EventLog          $eventLog `
+                -PerformanceCounters $performanceCounters `
                 -CollectionErrors  $collectionErrors.ToArray()
 
             $html | Set-Content -LiteralPath $ReportPath -Encoding UTF8
@@ -577,6 +630,7 @@ function Invoke-IISDiagnosticSweep {
         SiteConfigurations  = $siteConfigs
         SiteSummary         = $siteSummary
         EventLog            = $eventLog
+        PerformanceCounters = $performanceCounters
         CollectionErrors    = $collectionErrors.ToArray()
         ReportPath          = $ReportPath
     }
